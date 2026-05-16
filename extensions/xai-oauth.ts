@@ -116,6 +116,50 @@ export default function (pi: ExtensionAPI) {
       },
     },
 
+    // Custom tool for advanced Grok usage
+    tools: [
+      {
+        name: "xai_generate_text",
+        description: "Generate text using Grok with full reasoning, structured output, and stateful conversations.",
+        parameters: {
+          type: "object",
+          properties: {
+            prompt: {
+              type: "string",
+              description: "The prompt or question to send to Grok",
+            },
+            model: {
+              type: "string",
+              description: "Model to use (e.g. grok-4, grok-4.3)",
+              default: "grok-4",
+            },
+            reasoning_effort: {
+              type: "string",
+              enum: ["low", "medium", "high"],
+              description: "Reasoning effort level",
+              default: "medium",
+            },
+            response_format: {
+              type: "string",
+              description: "Set to 'json' for structured JSON output",
+            },
+            previous_response_id: {
+              type: "string",
+              description: "Continue from a previous response ID for stateful conversations",
+            },
+          },
+          required: ["prompt"],
+        },
+        handler: async (args: any) => {
+          // This is a placeholder - real implementation would call the Responses API
+          return {
+            content: "Tool executed (implementation coming soon)",
+            reasoning: "Reasoning would appear here with real Responses API calls",
+          };
+        },
+      },
+    ],
+
     models: [
       {
         id: "grok-3",
