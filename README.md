@@ -2,6 +2,15 @@ xAI (Grok) provider extension for Pi with clean OAuth-style login.
 
 This package adds full support for Grok models (including reasoning) through the official xAI API.
 
+## Features
+
+- Real OAuth login (`/login xai-oauth`) with device code flow + refresh tokens
+- Uses the modern `openai-responses` API
+- Custom tools: `xai_generate_text` and `xai_multi_agent`
+- Agentic tools: `web_search`, `x_search`, `code_execution`
+- Full reasoning support with thinking levels (`low` / `medium` / `high`)
+- Automatic detection of existing `~/.grok/auth.json`
+
 ## Installation
 
 ```bash
