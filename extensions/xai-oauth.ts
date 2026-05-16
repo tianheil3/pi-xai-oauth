@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"; #these are fine
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
 
 export default function (pi: ExtensionAPI) {
