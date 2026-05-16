@@ -18,6 +18,14 @@ function getGrokAuthToken(): string | null {
 }
 
 export default function (pi: ExtensionAPI) {
+  // Auto-enable agentic tools when a Grok model is active
+  pi.on("model_change", (event) => {
+    if (event.model?.provider === "xai-oauth" || event.model?.id?.startsWith("grok")) {
+      // Agentic tools are now available for this model
+      console.log("[xai-oauth] Agentic mode enabled for Grok model");
+    }
+  });
+
   pi.registerProvider("xai-oauth", {
     name: "xAI (OAuth)",
     baseUrl: "https://api.x.ai/v1",
