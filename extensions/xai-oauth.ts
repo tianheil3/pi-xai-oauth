@@ -1,17 +1,48 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"; 
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
+import { readFileSync, existsSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
+
+function getGrokAuthToken(): string | null {
+  const authPath = join(homedir(), ".grok", "auth.json");
+  if (existsSync(authPath)) {
+    try {
+      const data = JSON.parse(readFileSync(authPath, "utf8"));
+      return data.access_token || data.token || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 export default function (pi: ExtensionAPI) {
   pi.registerProvider("xai-oauth", {
     name: "xAI (OAuth)",
     baseUrl: "https://api.x.ai/v1",
-    api: "openai-completions",
+    api: "openai-responses",
     authHeader: true,
 
     oauth: {
       name: "xAI (Grok)",
 
       async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
+        // Check for existing Grok auth file first
+        const existingToken = getGrokAuthToken();
+        if (existingToken) {
+          const useExisting = await callbacks.onPrompt({
+            message: "Found existing Grok auth. Use it? (y/n)"
+          });
+          if (useExisting.toLowerCase().startsWith("y")) {
+            return {
+              refresh: "",
+              access: existingToken,
+              expires: Date.now() + 1000 * 60 * 60 * 24 * 30,
+            };
+          }
+        }
+
         const accessToken = await callbacks.onPrompt({
           message:
             "Paste your xAI API key (starts with xai-).\n" +
