@@ -5,7 +5,8 @@
   "keywords": ["pi-package"],
   "license": "MIT",
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": ["./extensions"],
+    "image": "https://raw.githubusercontent.com/BlockedPath/pi-xai-oauth/main/preview.jpeg"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
