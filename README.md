@@ -1,5 +1,8 @@
 # pi-xai-oauth
 
+[![npm version](https://img.shields.io/npm/v/pi-xai-oauth.svg)](https://www.npmjs.com/package/pi-xai-oauth)
+[![npm downloads](https://img.shields.io/npm/dm/pi-xai-oauth.svg)](https://www.npmjs.com/package/pi-xai-oauth)
+
 xAI (Grok) model provider with OAuth login support for pi.
 
 ## Installation
@@ -7,7 +10,7 @@ xAI (Grok) model provider with OAuth login support for pi.
 ```bash
 pi install npm:pi-xai-oauth
 # or
-pi install git:github.com/yourname/pi-xai-oauth
+pi install git:github.com/BlockedPath/pi-xai-oauth
 ```
 
 ## Usage
