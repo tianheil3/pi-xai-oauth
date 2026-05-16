@@ -1,27 +1,26 @@
-# pi-xai-oauth
+xAI (Grok) provider extension for Pi with clean OAuth-style login.
 
-[![npm version](https://img.shields.io/npm/v/pi-xai-oauth.svg)](https://www.npmjs.com/package/pi-xai-oauth)
-[![npm downloads](https://img.shields.io/npm/dm/pi-xai-oauth.svg)](https://www.npmjs.com/package/pi-xai-oauth)
-
-xAI (Grok) model provider with OAuth login support for pi.
+This package adds full support for Grok models (including reasoning) through the official xAI API.
 
 ## Installation
 
 ```bash
+# Recommended
 pi install npm:pi-xai-oauth
-# or
+
+# Or install from GitHub
 pi install git:github.com/BlockedPath/pi-xai-oauth
 ```
 
 ## Usage
 
-After installing, authenticate with:
+After installing, authenticate using:
 
 ```bash
 pi /login xai-oauth
 ```
 
-Then select any Grok model via `/model`.
+Then select any supported Grok model with `/model` or `--model`.
 
 ## Supported Models
 
@@ -30,22 +29,38 @@ Then select any Grok model via `/model`.
 - `grok-4`
 - `grok-4.3` (1M context)
 
-All models support extended reasoning with thinking levels (`low` / `medium` / `high`).
+All models support extended thinking with levels: `low`, `medium`, `high`.
 
-## Configuration
+## Quick Reference
 
-The extension registers the provider as `xai-oauth`.
-
-You can override the base URL or add custom headers via `~/.pi/agent/models.json` if needed.
+| Action                    | Command                              |
+|---------------------------|--------------------------------------|
+| Install                   | `pi install npm:pi-xai-oauth`        |
+| Try without installing    | `pi -e npm:pi-xai-oauth`             |
+| Update                    | `pi update npm:pi-xai-oauth`         |
+| Remove                    | `pi remove npm:pi-xai-oauth`         |
+| List installed packages   | `pi list`                            |
 
 ## Authentication
 
-This package uses a clean prompt-based flow for xAI API keys.
-
-After installing, run:
+Run:
 
 ```bash
 pi /login xai-oauth
 ```
 
-Then paste your key from https://console.x.ai
+Then paste your xAI API key from https://console.x.ai
+
+## Updating the Package
+
+```bash
+# 1. Bump version in package.json
+# 2. Publish new version
+npm publish
+```
+
+Users can update with:
+
+```bash
+pi update npm:pi-xai-oauth
+```
