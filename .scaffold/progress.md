@@ -30,3 +30,11 @@
 This structure follows 2026 best practices: dedicated AGENTS.md, external persistent state, planning-first approach, and multi-agent delegation patterns.
 
 Update this file frequently during execution.
+
+## Phase 5: Multi-Agent Integration
+- [ ] Document preferred subagent usage patterns in AGENTS.md
+- [ ] Create lightweight `scaffold-starter` template
+- [ ] Add reviewer step in workflow
+- [ ] Test parallel/chain subagent delegation
+
+**Current branch:** feature/multi-agent-integration
