@@ -28,24 +28,14 @@ export default function (pi: ExtensionAPI) {
       name: "xAI (Grok)",
 
       async login(callbacks: OAuthLoginCallbacks): Promise<OAuthCredentials> {
-        const existingToken = getGrokAuthToken();
-        if (existingToken) {
-          const useExisting = await callbacks.onPrompt({
-            message: "Found existing Grok auth. Use it? (y/n)",
-          });
-          if (useExisting.toLowerCase().startsWith("y")) {
-            return {
-              refresh: "",
-              access: existingToken,
-              expires: Date.now() + 1000 * 60 * 60 * 24 * 30,
-            };
-          }
-        }
+        // Open browser to xAI console for authorization
+        callbacks.onAuth({
+          url: "https://console.x.ai",
+        });
 
         const accessToken = await callbacks.onPrompt({
           message:
-            "Paste your xAI API key (starts with xai-).\n" +
-            "You can get one at https://console.x.ai",
+            "After authorizing in the browser, paste your xAI API key here (starts with xai-):",
         });
 
         return {
