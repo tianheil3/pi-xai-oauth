@@ -1032,6 +1032,113 @@ Be specific and cite examples where helpful.`;
         return { content: [{ type: "text", text }], details: { prompt: params.prompt, urls, count: urls.length } };
       },
     } as any);
+
+    // ====================== NEW TOOLS (OAuth-only) ======================
+    pi.registerTool({
+      name: "xai_critique",
+      label: "xAI Critique",
+      description: "Provide detailed, reasoned critique of code, designs, writing, ideas, or arguments with structured feedback.",
+      parameters: {
+        type: "object",
+        properties: {
+          content: { type: "string", description: "The code, text, design, or idea to critique" },
+          aspect: { type: "string", description: "Focus area: code, design, writing, logic, security, performance, etc." },
+          tone: { type: "string", description: "Tone of critique: constructive, strict, balanced", default: "constructive" }
+        },
+        required: ["content"],
+      },
+      execute: async (_toolCallId: string, params: { content?: string; aspect?: string; tone?: string }, _signal: any, _onUpdate: any, ctx: any) => {
+        const apiKey = getXaiAuthToken(ctx);
+        if (!apiKey) {
+          return { content: [{ type: "text", text: `Error: No xAI OAuth credentials found. Please run the OAuth login first.` }], details: { content: params?.content } };
+        }
+        const aspect = params.aspect || "overall quality and correctness";
+        const tone = params.tone || "constructive";
+        const prompt = `Provide a ${tone} critique focused on ${aspect}.\n\nContent to critique:\n${params.content}\n\nStructure your response with:\n- Strengths\n- Weaknesses / Issues\n- Specific suggestions for improvement\n- Overall assessment (score 1-10)\nUse step-by-step reasoning.`;
+        const res = await fetch("https://api.x.ai/v1/responses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ model: "grok-4.3", input: [{ role: "user", content: prompt }], reasoning: { effort: "high" } }),
+        });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return { content: [{ type: "text", text: `xAI API Error ${res.status}: ${errorText}` }], details: { error: true, status: res.status } };
+        }
+        const data = await res.json();
+        const text = extractResponsesText(data) || "Critique completed.";
+        return { content: [{ type: "text", text }], details: { aspect, tone } };
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "xai_analyze_image",
+      label: "xAI Image Analysis",
+      description: "Analyze images, describe visual content, answer questions about images, or extract information using Grok's vision capabilities.",
+      parameters: {
+        type: "object",
+        properties: {
+          image: { type: "string", description: "Image URL, local file path, or base64 data URL" },
+          question: { type: "string", description: "Question to ask about the image (default: describe in detail)" }
+        },
+        required: ["image"],
+      },
+      execute: async (_toolCallId: string, params: { image?: string; question?: string }, _signal: any, _onUpdate: any, ctx: any) => {
+        const apiKey = getXaiAuthToken(ctx);
+        if (!apiKey) {
+          return { content: [{ type: "text", text: `Error: No xAI OAuth credentials found. Please run the OAuth login first.` }], details: { image: params?.image } };
+        }
+        const question = params.question || "Describe this image in detail, including objects, text, style, and any notable details.";
+        // Reuse existing image normalization from the file
+        const imageInput = normalizeXaiImageInput(params.image) || params.image;
+        const prompt = [{ role: "user", content: [{ type: "text", text: question }, { type: "image_url", image_url: { url: imageInput } }] }];
+        const res = await fetch("https://api.x.ai/v1/responses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ model: "grok-4.3", input: prompt, reasoning: { effort: "medium" } }),
+        });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return { content: [{ type: "text", text: `xAI API Error ${res.status}: ${errorText}` }], details: { error: true, status: res.status, image: params.image } };
+        }
+        const data = await res.json();
+        const text = extractResponsesText(data) || "Image analysis completed.";
+        return { content: [{ type: "text", text }], details: { image: params.image, question } };
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "xai_deep_research",
+      label: "xAI Deep Research",
+      description: "Conduct thorough multi-step research on a topic, synthesize information, cite sources, and provide comprehensive analysis with high reasoning effort.",
+      parameters: {
+        type: "object",
+        properties: {
+          topic: { type: "string", description: "Research topic or question" },
+          depth: { type: "string", description: "Research depth: low, medium, high", default: "high" }
+        },
+        required: ["topic"],
+      },
+      execute: async (_toolCallId: string, params: { topic?: string; depth?: string }, _signal: any, _onUpdate: any, ctx: any) => {
+        const apiKey = getXaiAuthToken(ctx);
+        if (!apiKey) {
+          return { content: [{ type: "text", text: `Error: No xAI OAuth credentials found. Please run the OAuth login first.` }], details: { topic: params?.topic } };
+        }
+        const depth = params.depth || "high";
+        const prompt = `Conduct deep ${depth} research on: ${params.topic}.\n\nSteps:\n1. Gather key facts, recent developments, and authoritative sources.\n2. Analyze different perspectives and potential biases.\n3. Synthesize findings into clear conclusions.\n4. Provide actionable insights and open questions.\n\nUse step-by-step reasoning and cite sources where possible.`;
+        const res = await fetch("https://api.x.ai/v1/responses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({ model: "grok-4.3", input: [{ role: "user", content: prompt }], reasoning: { effort: depth === "high" ? "high" : "medium" } }),
+        });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return { content: [{ type: "text", text: `xAI API Error ${res.status}: ${errorText}` }], details: { error: true, status: res.status } };
+        }
+        const data = await res.json();
+        const text = extractResponsesText(data) || "Research completed.";
+        return { content: [{ type: "text", text }], details: { topic: params.topic, depth } };
+      },
+    } as any);
   }
 
   registerXaiTools();
