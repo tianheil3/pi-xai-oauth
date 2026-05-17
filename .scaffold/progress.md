@@ -37,4 +37,13 @@ Update this file frequently during execution.
 - [ ] Add reviewer step in workflow
 - [ ] Test parallel/chain subagent delegation
 
+## Phase 6: Provider Payload Hook Repair
+- [x] Diagnosed pi 0.74 provider errors after skill install: `before_provider_request` returned `{ payload }` instead of the replacement payload directly.
+- [x] Patched `extensions/xai-oauth.ts` so sanitized provider requests are returned in the shape pi expects.
+- [x] Removed the redundant global provider request hook so xAI sanitation stays inside the xAI provider stream path and does not mutate DeepSeek/Codex payloads.
+- [x] Reinstalled the local package, cleared pi's Jiti cache, and verified provider smoke tests:
+  - xAI now reaches the xAI API and returns an account/subscription 403 instead of `missing field input`.
+  - DeepSeek returns `OK` instead of `missing field messages`.
+  - OpenAI Codex returns `OK` instead of rejecting model `None`.
+
 **Current branch:** feature/multi-agent-integration
