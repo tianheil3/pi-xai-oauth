@@ -140,19 +140,27 @@ function printNextSteps(nonInteractive = false) {
   console.log(`   Update later: ${color("pi update npm:pi-xai-oauth", "yellow")}\n`);
 }
 
+function printScaffoldHeader() {
+  console.log(`\n${color("🛠️  Agent Scaffolding", "cyan")} — ${color("2026 best practices for pi agents", "bold")}\n`);
+  console.log("   Bootstraps AGENTS.md + .scaffold/ persistent state harness for reliable multi-agent work.\n");
+}
+
 function generateScaffold(nonInteractive = false) {
-  printHeader();
+  printScaffoldHeader();
   console.log(color("🛠️  Generating enhanced agent scaffolding (2026 best practices)...", "cyan"));
 
   const scaffoldDir = path.join(process.cwd(), ".scaffold");
   const date = new Date().toISOString().split("T")[0];
-  const branch = process.env.GIT_BRANCH || "feature/your-task";
+  let branch = "feature/your-task";
+  try {
+    branch = execSync("git rev-parse --abbrev-ref HEAD", { stdio: "pipe", encoding: "utf8" }).trim();
+  } catch {}
   let projectName = "pi-package";
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
     if (pkg.name) projectName = pkg.name;
   } catch {}
-  // projectName now dynamic from package.json
+  // projectName and branch now dynamic
 
   const templates = {
     "plan.md": `# Implementation Plan: Enhanced Agent Scaffolding
@@ -283,22 +291,39 @@ See .scaffold/plan.md for current roadmap.`;
   }
 }
 
-function main() {
-  printHeader();
+function printHelp() {
+  console.log(`\n${color("pi-xai-oauth", "cyan")} — CLI for xAI OAuth setup and agent scaffolding\n`);
+  console.log("Usage:");
+  console.log("  npx pi-xai-oauth              Run interactive xAI OAuth + settings setup");
+  console.log("  npx pi-xai-oauth --scaffold   Generate .scaffold/ harness in current project");
+  console.log("  npx pi-xai-oauth --yes        Non-interactive / automated mode");
+  console.log("  npx pi-xai-oauth --help       Show this help\n");
+  console.log("Examples:");
+  console.log("  npx pi-xai-oauth --scaffold   # in any pi project to add agent harness\n");
+}
 
+function main() {
   const args = process.argv.slice(2);
   const yes = args.includes("--yes") || args.includes("-y");
   const scaffold = args.includes("--scaffold") || args.includes("-s");
+  const help = args.includes("--help") || args.includes("-h");
 
-  if (!checkPi() && !scaffold) {
-    console.log(color("❌ 'pi' command not found in PATH.", "red"));
-    console.log("Please install pi first → https://pi.dev\n");
-    process.exit(1);
+  if (help) {
+    printHelp();
+    return;
   }
 
   if (scaffold) {
     generateScaffold(yes);
     return;
+  }
+
+  printHeader();
+
+  if (!checkPi()) {
+    console.log(color("❌ 'pi' command not found in PATH.", "red"));
+    console.log("Please install pi first → https://pi.dev\n");
+    process.exit(1);
   }
 
   const success = installPackage();

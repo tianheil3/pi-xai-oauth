@@ -17,12 +17,14 @@
 - [x] Added context.md generation + generic templates
 - [x] Updated README.md with Agent Scaffolding section
 - [x] Reviewed and fixed minor consistency issues
+- [x] Fixed CLI issues: duplicate headers, missing --help, improved arg parsing, dynamic branch detection, scaffold-specific header
 
 ## Next Actions
-1. Use parallel agents to draft improved setup.js logic
-2. Run reviewer on all new files
-3. Commit changes with clear message
-4. Consider creating a reusable scaffold template package
+1. Run `npx tsc --noEmit` (already clean)
+2. [x] Test full --scaffold and --help flows (verified: clean output, no duplicates, new headers, skips existing files)
+3. Run reviewer agent on changes
+4. Commit with clear message
+5. Consider creating a reusable scaffold template package
 
 ## Notes
 This structure follows 2026 best practices: dedicated AGENTS.md, external persistent state, planning-first approach, and multi-agent delegation patterns.
