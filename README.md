@@ -1,9 +1,10 @@
 # pi-xai-oauth
 
-**xAI (Grok) OAuth provider for pi** — 1M context, reasoning, and custom xAI tools.
-![CodeRabbit Pull Request Reviews]
+   [![CodeRabbit Pull Request
+ Reviews](https://img.shields.io/coderabbit/prs/github/BlockedPath/pi-xai-oauth?utm_source=oss&utm_medium=github&utm_campaign=BlockedPath%2Fpi-xai-oauth&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.a
+ i&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
-(https://img.shields.io/coderabbit/prs/github/BlockedPath/pi-xai-oauth?utm_source=oss&utm_medium=github&utm_campaign=BlockedPath%2Fpi-xai-oauth&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
+   **xAI (Grok) OAuth provider for pi** — 1M context, reasoning, and custom xAI tools.=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
 
 ```bash
 npx pi-xai-oauth
