@@ -421,4 +421,10 @@ PRs welcome! If you find issues or want to improve the OAuth flow, feel free to 
 
 ---
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=BlockedPath/pi-xai-oauth&type=Date)](https://star-history.com/#BlockedPath/pi-xai-oauth&Date)
+
+---
+
 *Powered by Grok 4.3 — 1M context, reasoning, and the full xAI API.*
