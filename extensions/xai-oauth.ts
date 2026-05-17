@@ -907,18 +907,29 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
       name: "xai_x_search",
       label: "xAI X Search",
-      description: "Search X (Twitter) using Grok's native real-time X search and knowledge.",
+      description: "Search X (Twitter) using Grok's native real-time X search and knowledge. Supports advanced filters like count, since, until.",
       parameters: {
         type: "object",
-        properties: { query: { type: "string", description: "X search query" } },
+        properties: {
+          query: { type: "string", description: "X search query" },
+          count: { type: "number", description: "Max number of posts to return (1-10)", default: 5 },
+          since: { type: "string", description: "Only posts after this date (YYYY-MM-DD)" },
+          until: { type: "string", description: "Only posts before this date (YYYY-MM-DD)" }
+        },
         required: ["query"],
       },
-      execute: async (_toolCallId: string, params: { query?: string }, _signal: any, _onUpdate: any, ctx: any) => {
+      execute: async (_toolCallId: string, params: { query?: string; count?: number; since?: string; until?: string }, _signal: any, _onUpdate: any, ctx: any) => {
         const apiKey = ctx?.apiKey || process.env.XAI_API_KEY;
         if (!apiKey) {
           return { content: [{ type: "text", text: `Error: No xAI API key for X search` }], details: { query: params?.query } };
         }
-        const prompt = `You have native real-time access to X (Twitter) posts and trends via Grok's built-in X search. Use it to find the most relevant recent posts about: ${params.query}.
+        let prompt = `You have native real-time access to X (Twitter) posts and trends via Grok's built-in X search. Use it to find the most relevant recent posts about: ${params.query}.
+
+Filters:`;
+        if (params.count) prompt += ` Return up to ${params.count} posts.`;
+        if (params.since) prompt += ` Only posts since ${params.since}.`;
+        if (params.until) prompt += ` Only posts until ${params.until}.`;
+        prompt += `
 
 Summarize:
 - Top posts with usernames, engagement (likes/reposts/views), and timestamps
