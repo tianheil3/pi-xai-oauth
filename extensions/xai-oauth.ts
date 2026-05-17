@@ -971,6 +971,49 @@ Be specific and cite examples where helpful.`;
         return { content: [{ type: "text", text }], details: { code: params.code } };
       },
     } as any);
+
+    // ====================== ADDITIONAL TOOLS ======================
+    pi.registerTool({
+      name: "xai_generate_image",
+      label: "xAI Image Generation",
+      description: "Generate images using Grok's Flux-based image model with high quality and prompt adherence.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Detailed description of the image to generate" },
+          size: { type: "string", description: "Image size (e.g. 1024x1024, 1792x1024)", default: "1024x1024" },
+          n: { type: "number", description: "Number of images to generate (1-4)", default: 1 }
+        },
+        required: ["prompt"],
+      },
+      execute: async (_toolCallId: string, params: { prompt?: string; size?: string; n?: number }, _signal: any, _onUpdate: any, ctx: any) => {
+        const apiKey = ctx?.apiKey || process.env.XAI_API_KEY;
+        if (!apiKey) {
+          return { content: [{ type: "text", text: `Error: No xAI API key for image generation` }], details: { prompt: params?.prompt } };
+        }
+        const res = await fetch("https://api.x.ai/v1/images/generations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: "grok-2-image",
+            prompt: params.prompt,
+            n: params.n || 1,
+            size: params.size || "1024x1024"
+          }),
+        });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return { content: [{ type: "text", text: `xAI Image API Error ${res.status}: ${errorText}` }], details: { error: true, status: res.status, prompt: params.prompt } };
+        }
+        const data = await res.json();
+        const images = data.data || [];
+        const urls = images.map((img: any) => img.url).filter(Boolean);
+        const text = urls.length > 0 
+          ? `Generated ${urls.length} image(s):\n${urls.map((u: string) => `- ${u}`).join("\n")}` 
+          : "Image generation completed but no URLs returned.";
+        return { content: [{ type: "text", text }], details: { prompt: params.prompt, urls, count: urls.length } };
+      },
+    } as any);
   }
 
   registerXaiTools();
