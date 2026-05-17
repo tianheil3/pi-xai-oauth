@@ -487,6 +487,7 @@ export default function (pi: ExtensionAPI) {
           reasoning_effort: { type: "string", enum: ["low", "medium", "high"], default: "medium" },
           response_format: { type: "string", description: "Set to 'json' for JSON output" },
           previous_response_id: { type: "string", description: "Continue conversation" },
+          image_url: { type: "string", description: "Optional image URL for vision/multimodal input (supports image analysis)" },
         },
         required: ["prompt"],
       },
@@ -499,9 +500,25 @@ export default function (pi: ExtensionAPI) {
           };
         }
 
+        // Build proper Responses API input format (array of messages) to support text + images
+        let inputContent: any;
+        if (params.image_url) {
+          inputContent = [
+            { type: "input_text", text: params.prompt || "Describe this image." },
+            { type: "input_image", image_url: params.image_url }
+          ];
+        } else {
+          inputContent = params.prompt;
+        }
+
+        const userMessage = {
+          role: "user",
+          content: inputContent,
+        };
+
         const body: any = {
           model: params.model || "grok-4.3",
-          input: params.prompt,
+          input: [userMessage],
           reasoning: { effort: params.reasoning_effort || "medium" },
         };
 
@@ -520,6 +537,14 @@ export default function (pi: ExtensionAPI) {
           },
           body: JSON.stringify(body),
         });
+
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return {
+            content: [{ type: "text", text: `xAI API Error ${res.status}: ${errorText}` }],
+            details: { error: true, status: res.status, reasoning: "", response_id: "" },
+          };
+        }
 
         const data = await res.json();
         const text = data.output?.[0]?.content?.[0]?.text || JSON.stringify(data);
@@ -566,10 +591,18 @@ export default function (pi: ExtensionAPI) {
           },
           body: JSON.stringify({
             model: "grok-4.3",
-            input: prompt,
+            input: [{ role: "user", content: prompt }],
             reasoning: { effort: params.reasoning_effort || "high" },
           }),
         });
+
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return {
+            content: [{ type: "text", text: `xAI API Error ${res.status}: ${errorText}` }],
+            details: { error: true, status: res.status, agents_used: 0, response_id: "" },
+          };
+        }
 
         const data = await res.json();
         const text = data.output?.[0]?.content?.[0]?.text || "Research completed";
@@ -604,8 +637,12 @@ export default function (pi: ExtensionAPI) {
         const res = await fetch("https://api.x.ai/v1/responses", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: "grok-4.3", input: prompt, reasoning: { effort: "medium" } }),
+          body: JSON.stringify({ model: "grok-4.3", input: [{ role: "user", content: prompt }], reasoning: { effort: "medium" } }),
         });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return { content: [{ type: "text", text: `xAI API Error ${res.status}: ${errorText}` }], details: { error: true, status: res.status, query: params.query } };
+        }
         const data = await res.json();
         const text = data.output?.[0]?.content?.[0]?.text || `No results for: ${params.query}`;
         return { content: [{ type: "text", text }], details: { query: params.query } };
@@ -638,8 +675,12 @@ Be specific and cite examples where helpful.`;
         const res = await fetch("https://api.x.ai/v1/responses", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: "grok-4.3", input: prompt, reasoning: { effort: "medium" } }),
+          body: JSON.stringify({ model: "grok-4.3", input: [{ role: "user", content: prompt }], reasoning: { effort: "medium" } }),
         });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return { content: [{ type: "text", text: `xAI API Error ${res.status}: ${errorText}` }], details: { error: true, status: res.status, query: params.query } };
+        }
         const data = await res.json();
         const text = data.output?.[0]?.content?.[0]?.text || `No X results for: ${params.query}`;
         return { content: [{ type: "text", text }], details: { query: params.query } };
@@ -664,8 +705,12 @@ Be specific and cite examples where helpful.`;
         const res = await fetch("https://api.x.ai/v1/responses", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: "grok-4.3", input: prompt, reasoning: { effort: "low" } }),
+          body: JSON.stringify({ model: "grok-4.3", input: [{ role: "user", content: prompt }], reasoning: { effort: "low" } }),
         });
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "Unknown error");
+          return { content: [{ type: "text", text: `xAI API Error ${res.status}: ${errorText}` }], details: { error: true, status: res.status, code: params.code } };
+        }
         const data = await res.json();
         const text = data.output?.[0]?.content?.[0]?.text || `Executed: ${String(params.code).substring(0, 100)}...`;
         return { content: [{ type: "text", text }], details: { code: params.code } };
