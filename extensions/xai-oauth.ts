@@ -7,6 +7,7 @@ import { createServer, type Server } from "http";
 import { homedir } from "os";
 import { extname, isAbsolute, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { sanitizeXaiPayload } from "../sanitize";
 
 const XAI_OAUTH_ISSUER = "https://auth.x.ai";
 const XAI_OAUTH_DISCOVERY_URL = `${XAI_OAUTH_ISSUER}/.well-known/openid-configuration`;
@@ -1142,5 +1143,13 @@ Be specific and cite examples where helpful.`;
   }
 
   registerXaiTools();
+
+  // Payload sanitization hook (runs before every provider request)
+  pi.on("before_provider_request", (event) => {
+    const sanitized = sanitizeXaiPayload(event.payload, null as any);
+    if (sanitized !== event.payload) {
+      return { payload: sanitized };
+    }
+  });
 }
 
