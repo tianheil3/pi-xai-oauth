@@ -22,7 +22,9 @@
   },
   "scripts": {
     "scaffold": "node bin/setup.js --scaffold",
-    "setup": "node bin/setup.js"
+    "setup": "node bin/setup.js",
+    "test": "node scripts/verify-extension.js",
+    "typecheck": "npx tsc --noEmit"
   },
   "pi": {
     "extensions": [

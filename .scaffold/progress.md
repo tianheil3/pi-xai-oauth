@@ -47,3 +47,27 @@ Update this file frequently during execution.
   - OpenAI Codex returns `OK` instead of rejecting model `None`.
 
 **Current branch:** feature/multi-agent-integration
+
+## Phase 7: xAI Auth + Tool Parity Repair
+- [x] Created current repair branch `codex/repair-xai-auth` from the detached worktree.
+- [x] Audited provider/OAuth and custom tool paths with parallel subagents.
+- [x] Hardened OAuth callback state handling so wrong or missing browser callback state cannot complete login.
+- [x] Refreshes reused Grok CLI credentials before accepting them, and rejects expired credentials that cannot refresh.
+- [x] Keeps xAI encrypted reasoning continuity in Responses payloads and preserves reasoning effort for Grok 4.20 reasoning.
+- [x] Updated Grok model metadata/pricing and added `grok-4.20-multi-agent-0309`.
+- [x] Reworked custom xAI tools to resolve OAuth via pi's model registry, remove `XAI_API_KEY` fallback, pass cancellation signals, and use native xAI `web_search`, `x_search`, and `code_interpreter` tools.
+- [x] Updated image analysis and image generation request shapes, including `grok-imagine-image-quality`.
+- [x] Added `scripts/verify-extension.js` plus `npm test` / `npm run typecheck` scripts.
+- [x] Fixed README/setup drift and backed up malformed pi settings before rewriting.
+- [x] Addressed final review findings: reload-safe tool registration, automatic Grok 4.20 reasoning handling, and correct multi-agent effort/accounting.
+- [x] Verified:
+  - `npm run typecheck`
+  - `npm test`
+  - `git diff --check`
+  - `npm pack --dry-run`
+  - `node bin/setup.js --help`
+  - live local-extension DeepSeek smoke: `OK.`
+  - live local-extension OpenAI Codex smoke: `OK`
+  - live local-extension xAI smoke reaches xAI and returns account/subscription `403` instead of a payload/auth-shape error.
+
+**Current branch:** codex/repair-xai-auth

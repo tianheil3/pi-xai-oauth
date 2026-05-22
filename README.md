@@ -95,7 +95,7 @@ Then optionally configure it as default:
   "defaultModel": "grok-4.3",
   "defaultThinkingLevel": "high"
 }
-``
+```
 ---
 
 ## Authentication
@@ -145,14 +145,16 @@ pi --model grok-4.3 "Write a poem about Rust"
 | Model ID | Description |
 |----------|-------------|
 | `grok-4.3` | **Default.** Full reasoning, 1M context. |
-| `grok-4.20-0309-reasoning` | Legacy Grok 4.2 with reasoning. |
-| `grok-4.20-0309-non-reasoning` | Legacy Grok 4.2, fast responses. |
+| `grok-4.20-0309-reasoning` | Grok 4.20 with automatic reasoning, 2M context. |
+| `grok-4.20-0309-non-reasoning` | Grok 4.20 fast responses, 2M context. |
+| `grok-4.20-multi-agent-0309` | Grok 4.20 multi-agent research model, 2M context. |
 
 From the pi TUI:
 
 ```
 /model grok-4.3
 /model grok-4.20-0309-reasoning
+/model grok-4.20-multi-agent-0309
 ```
 
 From the command line:
@@ -164,7 +166,7 @@ pi --model grok-4.20-0309-non-reasoning "Quick answer"
 
 ### Reasoning / Thinking Levels
 
-All reasoning models support three levels:
+Grok 4.3 supports configurable thinking levels:
 
 ```
 /think high
@@ -183,11 +185,13 @@ pi --model grok-4.3:low "What's the weather?"
 - **`medium`** — Balanced speed and depth.
 - **`low`** — Fast responses, minimal reasoning. Good for simple Q&A.
 
+`grok-4.20-0309-reasoning` reasons automatically and does not accept a configurable effort parameter. `grok-4.20-multi-agent-0309` uses `medium` for 4 agents and `high` for 16 agents.
+
 ---
 
 ## Custom Tools
 
-This package registers five custom tools that use the xAI API directly. They appear alongside your other agent tools:
+This package registers OAuth-backed custom tools that use the xAI API directly. They appear alongside your other agent tools:
 
 ### `xai_generate_text`
 Generate text with full reasoning and stateful conversations.
@@ -201,7 +205,7 @@ Generate text with full reasoning and stateful conversations.
 ```
 
 ### `xai_multi_agent`
-Deep multi-agent research. Simulates a team of researchers collaborating on a topic.
+Deep multi-agent research using Grok's multi-agent model plus native web and X search tools.
 
 ```json
 {
@@ -212,7 +216,7 @@ Deep multi-agent research. Simulates a team of researchers collaborating on a to
 ```
 
 ### `xai_web_search`
-Search the web — powered by Grok's native web knowledge and search.
+Search the web using xAI's native `web_search` tool.
 
 ```json
 {
@@ -221,7 +225,7 @@ Search the web — powered by Grok's native web knowledge and search.
 ```
 
 ### `xai_x_search`
-Search X (Twitter) — powered by Grok's native real-time X search and knowledge.
+Search X (Twitter) using xAI's native `x_search` tool.
 
 ```json
 {
@@ -230,11 +234,51 @@ Search X (Twitter) — powered by Grok's native real-time X search and knowledge
 ```
 
 ### `xai_code_execution`
-Ask Grok to analyze or simulate Python code execution.
+Run Python-oriented analysis using xAI's native `code_interpreter` tool.
 
 ```json
 {
   "code": "print(sum(range(100)))"
+}
+```
+
+### `xai_generate_image`
+Generate images with xAI's current image generation model.
+
+```json
+{
+  "prompt": "A clean product diagram of an OAuth flow",
+  "model": "grok-imagine-image-quality"
+}
+```
+
+### `xai_analyze_image`
+Analyze an image URL, data URL, or local `.png` / `.jpg` path with Grok vision.
+
+```json
+{
+  "image": "/Users/me/Desktop/screenshot.png",
+  "question": "What error is visible?"
+}
+```
+
+### `xai_critique`
+Get structured critique for code, designs, writing, or ideas.
+
+```json
+{
+  "content": "function add(a,b){ return a-b }",
+  "aspect": "code correctness"
+}
+```
+
+### `xai_deep_research`
+Research a topic with Grok reasoning plus native web and X search tools.
+
+```json
+{
+  "topic": "Recent xAI Responses API tool changes",
+  "depth": "high"
 }
 ```
 

@@ -63,7 +63,13 @@ function updateSettings() {
     try {
       settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8"));
     } catch (e) {
-      console.log(color("   Warning: Could not parse existing settings.json", "yellow"));
+      const backupPath = `${SETTINGS_PATH}.bak-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+      try {
+        fs.copyFileSync(SETTINGS_PATH, backupPath);
+        console.log(color(`   Warning: Could not parse existing settings.json; backed it up to ${backupPath}`, "yellow"));
+      } catch {
+        console.log(color("   Warning: Could not parse existing settings.json and could not create a backup", "yellow"));
+      }
     }
   }
 
@@ -133,10 +139,14 @@ function printNextSteps(nonInteractive = false) {
   console.log("You now have access to powerful reasoning + 1M context!\n");
   console.log("Bonus tools available:");
   console.log("   • xai_generate_text     — Generate text with full reasoning");
-  console.log("   • xai_multi_agent       — Multi-agent research");
-  console.log("   • xai_web_search        — Web search powered by Grok");
-  console.log("   • xai_x_search        — X/Twitter search");
-  console.log("   • xai_code_execution    — Python code analysis & execution\n");
+  console.log("   • xai_multi_agent       — Multi-agent research with web/X tools");
+  console.log("   • xai_web_search        — Native xAI web search");
+  console.log("   • xai_x_search          — Native X/Twitter search");
+  console.log("   • xai_code_execution    — Native code interpreter");
+  console.log("   • xai_generate_image    — Image generation");
+  console.log("   • xai_analyze_image     — Image analysis");
+  console.log("   • xai_critique          — Structured critique");
+  console.log("   • xai_deep_research     — Deep research with web/X tools\n");
   console.log(`   Update later: ${color("pi update npm:pi-xai-oauth", "yellow")}\n`);
 }
 
