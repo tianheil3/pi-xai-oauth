@@ -49,6 +49,8 @@ This package adds **Grok 4.3** as a fully-integrated provider in pi, with proper
 - **Custom xAI tools** — generate text, web search, X/Twitter search, multi-agent research, code analysis
 - **Modern API** — uses OpenAI's `responses` API format via `https://api.x.ai/v1`
 
+> **✅ Verified (May 2026)**: All custom xAI tools (`xai_generate_text`, `xai_x_search`, `xai_web_search`, `xai_code_execution`, `xai_critique`, `xai_multi_agent`, `xai_deep_research`, image tools, etc.) have been tested end-to-end after the OAuth + payload repair. The provider now correctly handles mixed-model requests and native xAI tool shapes.
+
 ---
 
 ## How It Works
@@ -191,7 +193,11 @@ pi --model grok-4.3:low "What's the weather?"
 
 ## Custom Tools
 
-This package registers OAuth-backed custom tools that use the xAI API directly. They appear alongside your other agent tools:
+This package registers OAuth-backed custom tools that use the xAI API directly. They appear alongside your other agent tools in the pi TUI and are available to any agent running with the `xai-auth` provider.
+
+**How to use them:** Simply call the tool by name in your prompts or agent workflows (e.g. "use xai_web_search to find the latest Rust news"). The tools automatically use your authenticated xAI session.
+
+> **Tip:** During local development you may see both `npm:pi-xai-oauth` and a local path in `pi list`. The local path takes precedence.
 
 ### `xai_generate_text`
 Generate text with full reasoning and stateful conversations.
@@ -334,6 +340,8 @@ Then run `pi /list-providers` — you should see `xai-auth` listed.
 
 This means xAI rejected a multimodal Responses `input` shape. Use the latest package version and restart pi or run `/reload`. The provider normalizes local `.png`/`.jpg` paths into `data:image/...;base64,...` URLs, adds image `detail`, moves system/developer text to top-level `instructions`, and rewrites image-bearing tool results so `function_call_output.output` stays text-only (xAI rejects arrays there).
 
+> **Fixed in repair**: Requests from other providers (DeepSeek, OpenAI Codex, etc.) no longer get mutated by the xAI sanitation hook.
+
 If you call `xai_generate_text` directly, `image_url` may be either:
 
 - an `http(s)://...` URL
@@ -357,6 +365,15 @@ This re-runs the full OAuth flow and replaces your stored tokens.
 If you have the official Grok CLI installed and authenticated (`~/.grok/auth.json`), this package detects and reuses those credentials automatically.
 
 ### "What model am I using?"
+
+### `pi list` shows both npm package and local path
+
+This is normal during development when you have run `pi install .` alongside the published npm package. The local path takes precedence. To clean up:
+
+```bash
+pi remove npm:pi-xai-oauth
+pi install npm:pi-xai-oauth
+```
 
 In the pi TUI, the current model is shown in the status bar. You can also check with:
 
@@ -427,10 +444,16 @@ cd pi-xai-oauth
 npm install
 
 # Type-check
-npx tsc --noEmit
+npm run typecheck
+
+# Run verification tests
+npm test
 
 # Install local version in pi
 pi install .
+
+# Always work on a feature branch (per AGENTS.md)
+git checkout -b feature/your-task
 ```
 
 ### Project Structure
@@ -438,9 +461,13 @@ pi install .
 ```
 pi-xai-oauth/
 ├── extensions/
-│   └── xai-oauth.ts       # Provider registration + OAuth logic
+│   └── xai-oauth.ts          # Provider registration + OAuth logic (start here)
 ├── bin/
-│   └── setup.js           # One-command setup script (npx pi-xai-oauth)
+│   └── setup.js              # One-command setup (npx pi-xai-oauth)
+├── scripts/
+│   └── verify-extension.js   # npm test
+├── .scaffold/                # Persistent agent state (plan, progress, etc.)
+├── AGENTS.md                 # AI agent operations manual
 ├── package.json
 ├── tsconfig.json
 └── README.md
