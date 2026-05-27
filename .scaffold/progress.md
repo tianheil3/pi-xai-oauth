@@ -1,8 +1,8 @@
 # Execution Progress
 
-**Project:** Improved Agent Scaffolding  
-**Branch:** feature/improved-agent-scaffolding  
-**Started:** 2026-05-17
+**Project:** pi-xai-oauth Repair + Tool Verification  
+**Branch:** feature/xai-tools-all-verified  
+**Started:** 2026-05-27
 
 ## Completed
 - [x] Created branch `feature/improved-agent-scaffolding`
@@ -71,3 +71,15 @@ Update this file frequently during execution.
   - live local-extension xAI smoke reaches xAI and returns account/subscription `403` instead of a payload/auth-shape error.
 
 **Current branch:** codex/repair-xai-auth
+
+## Phase 8: Post-Repair Tool Verification (this branch)
+- [x] Synced local source to `codex/repair-xai-auth` (and main) via git setup
+- [x] `npm install` + `npm test` ✅ (`verify-extension: ok`)
+- [x] `pi install .` ✅
+- [x] Verified all custom xAI tools via live calls:
+  - `xai_x_search`, `xai_web_search`, `xai_critique`, `xai_generate_text` (grok-4.3 + reasoning), `xai_code_execution`
+- [x] Confirmed OAuth provider, native tool shapes, no XAI_API_KEY fallback, and reasoning continuity all working
+- [x] Initialized real git repo, switched to feature branch, updated docs
+- [x] Working tree clean, up-to-date with `origin/main`
+
+**Current branch:** feature/xai-tools-all-verified

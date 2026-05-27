@@ -11,7 +11,7 @@ Core flow: `bin/setup.js` → `pi install` → provider registration in `extensi
 - Install / setup: `node bin/setup.js` or `npm run setup` (if added)
 - Install as pi extension: `pi install npm:pi-xai-oauth`
 - Run TypeScript: `npx tsc --noEmit` (validate)
-- Git: Always work on feature branches. Current branch for this work: `feature/improved-agent-scaffolding`
+- Git: Always work on feature branches. Current branch for this work: `feature/xai-tools-all-verified`
 
 ## Architecture & Boundaries (MUST / MUST NOT)
 **MUST:**
