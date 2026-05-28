@@ -98,6 +98,18 @@ Then optionally configure it as default:
   "defaultThinkingLevel": "high"
 }
 ```
+
+> **⚠️ Important: Local Development vs Published Package**
+> 
+> If you have **both** `npm:pi-xai-oauth` and a local path installed (`pi list` will show both), pi will refuse to load the local version because the tool names conflict.
+> 
+> **Fix:**
+> ```bash
+> pi remove npm:pi-xai-oauth
+> pi install .
+> ```
+> Then restart pi. The local path should now be the only one listed.
+
 ---
 
 ## Authentication
@@ -197,7 +209,7 @@ This package registers OAuth-backed custom tools that use the xAI API directly. 
 
 **How to use them:** Simply call the tool by name in your prompts or agent workflows (e.g. "use xai_web_search to find the latest Rust news"). The tools automatically use your authenticated xAI session.
 
-> **Tip:** During local development you may see both `npm:pi-xai-oauth` and a local path in `pi list`. The local path takes precedence.
+> **Tip:** See the ⚠️ warning above about local vs published package conflicts.
 
 ### `xai_generate_text`
 Generate text with full reasoning and stateful conversations.
