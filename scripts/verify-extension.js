@@ -2,6 +2,7 @@
 
 const assert = require("assert");
 const path = require("path");
+const fs = require("fs/promises");
 const { createJiti } = require("jiti");
 
 const repoRoot = path.resolve(__dirname, "..");
@@ -56,18 +57,35 @@ function restoreFetchMock() {
   global.fetch = originalFetch;
 }
 
+function headerValue(headers, name) {
+  if (!headers) return undefined;
+  if (typeof headers.get === "function") return headers.get(name);
+  return headers[name] || headers[name.toLowerCase()];
+}
+
 function loadExtension() {
   const providers = new Map();
   const tools = new Map();
+  const handlers = new Map();
+  let activeTools = ["read", "bash", "edit", "write"];
   extension({
+    on(event, handler) {
+      handlers.set(event, handler);
+    },
     registerProvider(name, config) {
       providers.set(name, config);
     },
     registerTool(tool) {
       tools.set(tool.name, tool);
     },
+    getActiveTools() {
+      return activeTools;
+    },
+    setActiveTools(toolNames) {
+      activeTools = toolNames;
+    },
   });
-  return { providers, tools };
+  return { providers, tools, handlers, getActiveTools: () => activeTools, setActiveTools: (toolNames) => { activeTools = toolNames; } };
 }
 
 function authContext() {
@@ -83,20 +101,103 @@ function authContext() {
   };
 }
 
-async function runTool(tools, name, params = {}, expectedText = "OK") {
+async function runTool(tools, name, params = {}, expectedText = "OK", requestPrefix = "https://api.x.ai") {
   const controller = new AbortController();
   const before = requests.length;
   const result = await tools.get(name).execute("call_test", params, controller.signal, () => {}, authContext());
-  const request = requests.slice(before).find((entry) => entry.url?.startsWith("https://api.x.ai"));
+  const request = requests.slice(before).find((entry) => entry.url?.startsWith(requestPrefix));
   if (expectedText instanceof RegExp) {
     assert.match(result.content[0].text, expectedText, `${name} should surface mocked xAI text`);
   } else {
     assert.equal(result.content[0].text, expectedText, `${name} should surface mocked xAI text`);
   }
   assert.ok(request, `${name} should send a request`);
-  assert.equal(request.headers.Authorization, "Bearer oauth-token", `${name} should use OAuth token from pi model registry`);
+  assert.equal(headerValue(request.headers, "Authorization"), "Bearer oauth-token", `${name} should use OAuth token from pi model registry`);
   assert.strictEqual(request.signal, controller.signal, `${name} should pass the pi cancellation signal`);
-  return { body: request.body, result };
+  return { body: request.body, request, result };
+}
+
+async function runCursorTool(tools, name, params = {}, ctx = {}) {
+  const controller = new AbortController();
+  return tools.get(name).execute("call_cursor", params, controller.signal, () => {}, { cwd: repoRoot, ...ctx });
+}
+
+async function verifyCursorToolShims(tools) {
+  for (const name of ["Read", "Write", "StrReplace", "Edit", "Delete", "LS", "Grep", "Glob", "Shell", "WebSearch"]) {
+    assert.ok(tools.has(name), `${name} Cursor/Grok CLI shim should be registered`);
+  }
+
+  const grepResult = await runCursorTool(tools, "Grep", { query: "DEFAULT_XAI_MODEL", include: "*.ts", path: "extensions", limit: 5 });
+  assert.match(grepResult.content[0].text, /xai-oauth\.ts/, "Grep shim should map query/include to pi grep pattern/glob");
+
+  const globResult = await runCursorTool(tools, "Glob", { glob: "extensions/*.ts" });
+  assert.match(globResult.content[0].text, /extensions\/xai-oauth\.ts/, "Glob shim should map to pi find");
+
+  const readResult = await runCursorTool(tools, "Read", { file_path: "package.json", limit: 3 });
+  assert.match(readResult.content[0].text, /"name": "pi-xai-oauth"/, "Read shim should map file_path to pi read path");
+
+  const tmpDir = path.join(repoRoot, ".tmp-shim-tests");
+  const tmpFile = path.join(tmpDir, "cursor-shim.txt");
+  await fs.mkdir(tmpDir, { recursive: true });
+  try {
+    const writeResult = await runCursorTool(tools, "Write", { file_path: ".tmp-shim-tests/cursor-shim.txt", contents: "hello old" });
+    assert.match(writeResult.content[0].text, /Successfully wrote/, "Write shim should map contents to pi write content");
+
+    const replaceResult = await runCursorTool(tools, "StrReplace", {
+      file_path: ".tmp-shim-tests/cursor-shim.txt",
+      old_string: "hello old",
+      new_string: "hello new",
+    });
+    assert.match(replaceResult.content[0].text, /Successfully replaced/, "StrReplace shim should map old_string/new_string to pi edit");
+
+    const shellResult = await runCursorTool(tools, "Shell", { cmd: "printf shim-ok" });
+    assert.match(shellResult.content[0].text, /shim-ok/, "Shell shim should map cmd to pi bash command");
+
+    const deleteResult = await runCursorTool(tools, "Delete", { file_path: ".tmp-shim-tests/cursor-shim.txt" });
+    assert.match(deleteResult.content[0].text, /Deleted/, "Delete shim should remove files inside the workspace");
+  } finally {
+    await fs.rm(tmpFile, { force: true }).catch(() => {});
+    await fs.rm(tmpDir, { force: true, recursive: true }).catch(() => {});
+  }
+}
+
+async function verifyCursorToolActivation(loadResult) {
+  const { handlers, getActiveTools } = loadResult;
+  const ctx = {
+    getActiveTools,
+    setActiveTools: loadResult.setActiveTools,
+  };
+
+  await handlers.get("model_select")?.({ model: { provider: "xai-auth", id: "grok-composer-2.5-fast" } }, ctx);
+  assert.ok(getActiveTools().includes("Grep"), "Cursor shims should be enabled for Composer 2.5");
+
+  await handlers.get("model_select")?.({ model: { provider: "xai-auth", id: "grok-4.3" } }, ctx);
+  assert.ok(!getActiveTools().includes("Grep"), "Cursor shims should be disabled for non-Grok-CLI xAI models");
+}
+
+async function verifyCliModelStreamRouting(provider) {
+  const composer = provider.models.find((model) => model.id === "grok-composer-2.5-fast");
+  const model = {
+    ...composer,
+    provider: "xai-auth",
+    api: provider.api,
+    baseUrl: provider.baseUrl,
+  };
+  const before = requests.length;
+  const stream = provider.streamSimple(
+    model,
+    { messages: [{ role: "user", content: "hello", timestamp: Date.now() }] },
+    { apiKey: "oauth-token", sessionId: "session-test" },
+  );
+  await stream.result();
+  const request = requests.slice(before).find((entry) => entry.url?.startsWith("https://cli-chat-proxy.grok.com"));
+  assert.ok(request, "Composer 2.5 provider streams should route to the Grok CLI endpoint");
+  assert.equal(request.body.model, "grok-composer-2.5-fast");
+  assert.equal(request.body.reasoning, undefined, "Composer 2.5 provider streams should not send reasoning effort");
+  assert.equal(headerValue(request.headers, "Authorization"), "Bearer oauth-token");
+  assert.equal(headerValue(request.headers, "x-xai-token-auth"), "xai-grok-cli");
+  assert.equal(headerValue(request.headers, "x-grok-model-override"), "grok-composer-2.5-fast");
+  assert.equal(headerValue(request.headers, "x-grok-conv-id"), "session-test");
 }
 
 async function verifyOAuthCallbackState(provider) {
@@ -134,15 +235,23 @@ async function main() {
   installFetchMock();
 
   try {
-    const { providers, tools } = loadExtension();
+    const firstLoad = loadExtension();
+    const { providers, tools } = firstLoad;
     const secondLoad = loadExtension();
     const provider = providers.get("xai-auth");
     assert.ok(provider, "xai-auth provider should be registered");
     assert.equal(secondLoad.tools.size, tools.size, "extension reloads should register tools on the new pi API object");
     assert.equal(provider.api, "xai-responses");
     assert.equal(provider.models.find((model) => model.id === "grok-4.3")?.contextWindow, 1_000_000);
+    assert.equal(provider.models.find((model) => model.id === "grok-build")?.contextWindow, 512_000);
+    assert.equal(provider.models.find((model) => model.id === "grok-composer-2.5-fast")?.contextWindow, 200_000);
+    assert.equal(provider.models.find((model) => model.id === "grok-composer-2.5-fast")?.reasoning, false);
     assert.equal(provider.models.find((model) => model.id === "grok-4.20-0309-reasoning")?.contextWindow, 2_000_000);
     assert.ok(provider.models.some((model) => model.id === "grok-4.20-multi-agent-0309"));
+
+    await verifyCliModelStreamRouting(provider);
+    await verifyCursorToolActivation(firstLoad);
+    await verifyCursorToolShims(tools);
 
     await verifyOAuthCallbackState(provider);
 
@@ -152,6 +261,30 @@ async function main() {
       },
     });
     assert.match(noAuthResult.content[0].text, /No xAI OAuth credentials/, "tools should not fall back to XAI_API_KEY");
+
+    const { body: composerBody, request: composerRequest } = await runTool(
+      tools,
+      "xai_generate_text",
+      { prompt: "hi", model: "grok-composer-2.5-fast", reasoning_effort: "high" },
+      "OK",
+      "https://cli-chat-proxy.grok.com",
+    );
+    assert.equal(composerBody.model, "grok-composer-2.5-fast");
+    assert.equal(composerBody.reasoning, undefined, "Composer 2.5 should not send reasoning effort");
+    assert.equal(headerValue(composerRequest.headers, "x-xai-token-auth"), "xai-grok-cli");
+    assert.equal(headerValue(composerRequest.headers, "x-grok-model-override"), "grok-composer-2.5-fast");
+    assert.ok(headerValue(composerRequest.headers, "x-grok-conv-id"), "Composer 2.5 tool calls should include a Grok conversation id");
+
+    const { body: buildBody, request: buildRequest } = await runTool(
+      tools,
+      "xai_generate_text",
+      { prompt: "hi", model: "grok-build" },
+      "OK",
+      "https://cli-chat-proxy.grok.com",
+    );
+    assert.equal(buildBody.model, "grok-build");
+    assert.equal(headerValue(buildRequest.headers, "x-grok-model-override"), "grok-build");
+    assert.ok(headerValue(buildRequest.headers, "x-grok-conv-id"), "Grok Build tool calls should include a Grok conversation id");
 
     const { body: webBody } = await runTool(tools, "xai_web_search", { query: "xAI docs" });
     assert.deepEqual(webBody.tools, [{ type: "web_search", enable_image_understanding: true }]);

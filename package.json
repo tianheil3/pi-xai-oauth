@@ -1,7 +1,7 @@
 {
   "name": "pi-xai-oauth",
   "version": "1.2.1",
-  "description": "One-command installer for xAI (Grok) OAuth provider + Grok 4.3 in pi",
+  "description": "One-command installer for xAI OAuth provider + Grok, Grok Build, and Composer models in pi",
   "keywords": [
     "pi-package",
     "xai",
@@ -37,6 +37,7 @@
     "@earendil-works/pi-coding-agent": "*"
   },
   "devDependencies": {
-    "@types/node": "^25.8.0"
+    "@types/node": "^25.8.0",
+    "typescript": "^6.0.3"
   }
 }

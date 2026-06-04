@@ -1,11 +1,21 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  createBashToolDefinition,
+  createEditToolDefinition,
+  createFindToolDefinition,
+  createGrepToolDefinition,
+  createLsToolDefinition,
+  createReadToolDefinition,
+  createWriteToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import type { Api, Context, Model, OAuthCredentials, OAuthLoginCallbacks, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { streamSimpleOpenAIResponses } from "@earendil-works/pi-ai";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { existsSync, readFileSync } from "fs";
+import { rm } from "fs/promises";
 import { createServer, type Server } from "http";
 import { homedir } from "os";
-import { extname, isAbsolute, join, resolve } from "path";
+import { extname, isAbsolute, join, relative, resolve } from "path";
 import { fileURLToPath } from "url";
 
 const XAI_OAUTH_ISSUER = "https://auth.x.ai";
@@ -16,8 +26,12 @@ const XAI_OAUTH_REDIRECT_HOST = "127.0.0.1";
 const XAI_OAUTH_REDIRECT_PORT = 56121;
 const XAI_OAUTH_REDIRECT_PATH = "/callback";
 const XAI_OAUTH_REFRESH_SKEW_MS = 2 * 60 * 1000;
+const XAI_API_BASE_URL = "https://api.x.ai/v1";
+const XAI_CLI_BASE_URL = "https://cli-chat-proxy.grok.com/v1";
 const XAI_RESPONSES_URL = "https://api.x.ai/v1/responses";
+const XAI_CLI_RESPONSES_URL = "https://cli-chat-proxy.grok.com/v1/responses";
 const XAI_IMAGES_GENERATIONS_URL = "https://api.x.ai/v1/images/generations";
+const XAI_GROK_CLIENT_VERSION = "0.2.16";
 const DEFAULT_XAI_MODEL = "grok-4.3";
 const DEFAULT_XAI_IMAGE_MODEL = "grok-imagine-image-quality";
 
@@ -53,6 +67,32 @@ const MODELS = [
     maxTokens: 131_072,
   },
   {
+    id: "grok-build",
+    name: "Grok Build",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: { input: 1, output: 2, cacheRead: 0.2, cacheWrite: 0.2 },
+    contextWindow: 512_000,
+    maxTokens: 30_000,
+  },
+  {
+    id: "grok-composer-2.5-fast",
+    name: "Composer 2.5 Fast",
+    reasoning: false,
+    input: ["text", "image"],
+    cost: { input: 3, output: 15, cacheRead: 0.5, cacheWrite: 0 },
+    contextWindow: 200_000,
+    maxTokens: 30_000,
+    thinkingLevelMap: {
+      off: "none",
+      minimal: null,
+      low: null,
+      medium: null,
+      high: null,
+      xhigh: null,
+    },
+  },
+  {
     id: "grok-4.20-0309-reasoning",
     name: "Grok 4.20 Reasoning",
     reasoning: true,
@@ -82,6 +122,8 @@ const MODELS = [
 ];
 
 const xaiToolRegistrations = new WeakSet<object>();
+
+const XAI_CURSOR_TOOL_NAMES = ["Read", "Write", "StrReplace", "Edit", "Delete", "LS", "Grep", "Glob", "Shell", "WebSearch"];
 
 const XAI_GROK_CLI_AUTH_SCOPE_KEY = `${XAI_OAUTH_ISSUER}::${XAI_OAUTH_CLIENT_ID}`;
 const XAI_GROK_CLI_LEGACY_AUTH_SCOPE_KEY = "https://accounts.x.ai/sign-in";
@@ -480,18 +522,53 @@ function extractResponsesText(data: any): string {
 
 function xaiModelForRequest(modelId?: string): Model<Api> {
   const id = modelId || DEFAULT_XAI_MODEL;
-  const model = MODELS.find((candidate) => candidate.id === id) || MODELS[0];
+  const model =
+    MODELS.find((candidate) => candidate.id === id) ||
+    MODELS.find((candidate) => candidate.id === DEFAULT_XAI_MODEL) ||
+    MODELS[0];
   return {
     ...model,
     id,
     provider: "xai-auth",
     api: "xai-responses",
-    baseUrl: "https://api.x.ai/v1",
+    baseUrl: xaiBaseUrlForModel(id),
   } as any;
 }
 
+function normalizedXaiModelId(modelId: string): string {
+  return (modelId || "").toLowerCase().split("/").pop() || "";
+}
+
+function isGrokCliProxyModel(modelId: string): boolean {
+  const normalized = normalizedXaiModelId(modelId);
+  return normalized === "grok-build" || normalized === "grok-composer-2.5-fast";
+}
+
+function xaiBaseUrlForModel(modelId: string): string {
+  return isGrokCliProxyModel(modelId) ? XAI_CLI_BASE_URL : XAI_API_BASE_URL;
+}
+
+function xaiResponsesUrlForModel(modelId: string): string {
+  return isGrokCliProxyModel(modelId) ? XAI_CLI_RESPONSES_URL : XAI_RESPONSES_URL;
+}
+
+function grokCliProxyHeaders(modelId: string, sessionId?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "x-grok-client-identifier": "pi-xai-oauth",
+    "x-grok-client-version": XAI_GROK_CLIENT_VERSION,
+    "x-xai-token-auth": "xai-grok-cli",
+    "x-grok-model-override": normalizedXaiModelId(modelId),
+  };
+  if (sessionId) headers["x-grok-conv-id"] = sessionId;
+  return headers;
+}
+
+function xaiModelRequestHeaders(modelId: string, sessionId?: string): Record<string, string> {
+  return isGrokCliProxyModel(modelId) ? grokCliProxyHeaders(modelId, sessionId) : {};
+}
+
 function grokSupportsReasoningEffort(modelId: string): boolean {
-  const normalized = (modelId || "").toLowerCase().split("/").pop() || "";
+  const normalized = normalizedXaiModelId(modelId);
   return (
     normalized.startsWith("grok-3-mini") ||
     normalized.startsWith("grok-4.20-multi-agent") ||
@@ -604,21 +681,37 @@ function normalizeXaiResponsesInput(input: unknown[], model: Model<Api>): unknow
 function rewriteXaiResponsesPayload(payload: unknown, model: Model<Api>, options?: SimpleStreamOptions): unknown {
   if (!payload || typeof payload !== "object") return payload;
   const body: Record<string, any> = { ...(payload as Record<string, any>) };
+  const modelId = String(body.model || model.id);
+  const usesGrokCliProxy = isGrokCliProxyModel(modelId);
 
   // xAI's Responses API matches the OpenAI surface but has a few stricter
   // edges than pi's generic OpenAI Responses serializer. Hermes solves the
   // same Grok OAuth path with top-level instructions; xAI also rejects
   // image arrays in function_call_output.output, so normalize those here.
   if (Array.isArray(body.input)) {
-    const input = normalizeXaiResponsesInput([...body.input], model) as Record<string, any>[];
+    let input = normalizeXaiResponsesInput([...body.input], model) as Record<string, any>[];
     const instructionParts: string[] = [];
-    while (input.length > 0) {
-      const first = input[0];
-      if (!first || typeof first !== "object" || (first.role !== "developer" && first.role !== "system")) break;
-      const text = textFromResponsesContent(first.content).trim();
-      if (text) instructionParts.push(text);
-      input.shift();
+
+    if (usesGrokCliProxy) {
+      input = input.filter((item) => {
+        if (!item || typeof item !== "object") return true;
+        if (item.type === "reasoning") return false;
+        if (typeof item.content === "string" && item.content.length === 0) return false;
+        if (item.role !== "developer" && item.role !== "system") return true;
+        const text = textFromResponsesContent(item.content).trim();
+        if (text) instructionParts.push(text);
+        return false;
+      });
+    } else {
+      while (input.length > 0) {
+        const first = input[0];
+        if (!first || typeof first !== "object" || (first.role !== "developer" && first.role !== "system")) break;
+        const text = textFromResponsesContent(first.content).trim();
+        if (text) instructionParts.push(text);
+        input.shift();
+      }
     }
+
     if (instructionParts.length > 0) {
       body.instructions = [body.instructions, ...instructionParts].filter((part) => typeof part === "string" && part).join("\n\n");
     }
@@ -634,11 +727,16 @@ function rewriteXaiResponsesPayload(payload: unknown, model: Model<Api>, options
 
   if (body.reasoning && typeof body.reasoning === "object") {
     const effort = body.reasoning.effort;
-    if (typeof effort === "string" && effort !== "none" && grokSupportsReasoningEffort(String(body.model || model.id))) {
+    if (typeof effort === "string" && effort !== "none" && grokSupportsReasoningEffort(modelId)) {
       body.reasoning = { effort: effort === "minimal" ? "low" : effort };
     } else {
       delete body.reasoning;
     }
+  }
+
+  if (usesGrokCliProxy && Array.isArray(body.include)) {
+    body.include = body.include.filter((item: unknown) => item !== "reasoning.encrypted_content");
+    if (body.include.length === 0) delete body.include;
   }
 
   // xAI doesn't implement OpenAI's prompt_cache_retention knob. Keep the
@@ -657,6 +755,183 @@ function xaiToolError(message: string, details: Record<string, unknown> = {}) {
   return { content: [{ type: "text", text: message }], details };
 }
 
+function objectFromCursorArgs(value: unknown): Record<string, any> {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, any>;
+  if (typeof value !== "string") return {};
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, any>;
+  } catch {
+    // Plain string arguments are common in hand-written tool calls; callers
+    // decide whether that string should be treated as a path, pattern, command, etc.
+  }
+  return { value: trimmed };
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return undefined;
+}
+
+function firstBoolean(...values: unknown[]): boolean | undefined {
+  for (const value of values) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string" && value.trim()) {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "y"].includes(normalized)) return true;
+      if (["false", "0", "no", "n"].includes(normalized)) return false;
+    }
+  }
+  return undefined;
+}
+
+function cursorPath(params: Record<string, any>): string | undefined {
+  return firstString(params.path, params.file_path, params.filePath, params.target_file, params.targetFile, params.value);
+}
+
+function cursorContent(params: Record<string, any>): string | undefined {
+  return firstString(params.content, params.contents, params.text, params.value);
+}
+
+function cursorOldText(params: Record<string, any>): string | undefined {
+  return firstString(params.oldText, params.old_text, params.old_string, params.oldString, params.old, params.target);
+}
+
+function cursorNewText(params: Record<string, any>): string | undefined {
+  return firstString(params.newText, params.new_text, params.new_string, params.newString, params.new, params.replacement);
+}
+
+function cursorSearchPattern(params: Record<string, any>): string | undefined {
+  return firstString(params.pattern, params.query, params.regex, params.substring, params.value);
+}
+
+function cursorGlob(params: Record<string, any>): string | undefined {
+  return firstString(params.glob, params.include, params.glob_pattern, params.globPattern, params.glob_filter, params.globFilter, params.filter);
+}
+
+function uniqueToolNames(toolNames: string[]): string[] {
+  return [...new Set(toolNames)];
+}
+
+function syncCursorToolShimsForModel(ctx: any, model?: Model<Api>) {
+  if (typeof ctx?.getActiveTools !== "function" || typeof ctx?.setActiveTools !== "function") return;
+
+  const activeTools = Array.isArray(ctx.getActiveTools()) ? (ctx.getActiveTools() as string[]) : [];
+  const withoutCursorShims = activeTools.filter((toolName) => !XAI_CURSOR_TOOL_NAMES.includes(toolName));
+  const shouldEnableCursorShims = model?.provider === "xai-auth" && isGrokCliProxyModel(model.id);
+  const nextTools = shouldEnableCursorShims ? uniqueToolNames([...withoutCursorShims, ...XAI_CURSOR_TOOL_NAMES]) : withoutCursorShims;
+
+  if (nextTools.length !== activeTools.length || nextTools.some((toolName, index) => toolName !== activeTools[index])) {
+    ctx.setActiveTools(nextTools);
+  }
+}
+
+function normalizeReadArgs(args: unknown) {
+  const params = objectFromCursorArgs(args);
+  return {
+    path: cursorPath(params) || "",
+    offset: firstNumber(params.offset, params.start_line, params.startLine),
+    limit: firstNumber(params.limit, params.max_lines, params.maxLines),
+  };
+}
+
+function normalizeWriteArgs(args: unknown) {
+  const params = objectFromCursorArgs(args);
+  return {
+    path: cursorPath(params) || "",
+    content: cursorContent(params) ?? "",
+  };
+}
+
+function normalizeEditArgs(args: unknown) {
+  const params = objectFromCursorArgs(args);
+  if (Array.isArray(params.edits)) {
+    return {
+      path: cursorPath(params) || "",
+      edits: params.edits.map((edit: unknown) => {
+        const item = objectFromCursorArgs(edit);
+        return { oldText: cursorOldText(item) || "", newText: cursorNewText(item) ?? "" };
+      }),
+    };
+  }
+  return {
+    path: cursorPath(params) || "",
+    edits: [{ oldText: cursorOldText(params) || "", newText: cursorNewText(params) ?? "" }],
+  };
+}
+
+function normalizeGrepArgs(args: unknown) {
+  const params = objectFromCursorArgs(args);
+  return {
+    pattern: cursorSearchPattern(params) || "",
+    path: firstString(params.path, params.directory, params.dir, params.folder, params.file_path, params.filePath),
+    glob: cursorGlob(params),
+    ignoreCase: firstBoolean(params.ignoreCase, params.ignore_case, params.case_insensitive, params.caseInsensitive),
+    literal: firstBoolean(params.literal, params.fixed_strings, params.fixedStrings),
+    context: firstNumber(params.context, params.context_lines, params.contextLines),
+    limit: firstNumber(params.limit, params.max_results, params.maxResults),
+  };
+}
+
+function normalizeGlobArgs(args: unknown) {
+  const params = objectFromCursorArgs(args);
+  return {
+    pattern: firstString(params.pattern, params.glob, params.glob_pattern, params.globPattern, params.query, params.value) || "**/*",
+    path: firstString(params.path, params.directory, params.dir, params.folder),
+    limit: firstNumber(params.limit, params.max_results, params.maxResults),
+  };
+}
+
+function normalizeLsArgs(args: unknown) {
+  const params = objectFromCursorArgs(args);
+  return {
+    path: cursorPath(params),
+    limit: firstNumber(params.limit, params.max_results, params.maxResults),
+  };
+}
+
+function normalizeShellArgs(args: unknown) {
+  const params = objectFromCursorArgs(args);
+  return {
+    command: firstString(params.command, params.cmd, params.value) || "",
+    timeout: firstNumber(params.timeout, params.timeout_ms, params.timeoutMs),
+  };
+}
+
+function normalizeDeleteArgs(args: unknown) {
+  const params = objectFromCursorArgs(args);
+  return {
+    path: cursorPath(params) || "",
+    recursive: firstBoolean(params.recursive, params.directory, params.dir),
+  };
+}
+
+function safeWorkspacePath(cwd: string, requestedPath: string): string {
+  const resolved = isAbsolute(requestedPath) ? resolve(requestedPath) : resolve(cwd, requestedPath);
+  const workspace = resolve(cwd);
+  const workspaceRelativePath = relative(workspace, resolved);
+  if (workspaceRelativePath.startsWith("..") || isAbsolute(workspaceRelativePath)) {
+    throw new Error(`Refusing to operate outside the workspace: ${requestedPath}`);
+  }
+  return resolved;
+}
+
 async function resolveXaiAuthToken(ctx: any): Promise<string | null> {
   const registryModel = ctx?.modelRegistry?.find?.("xai-auth", DEFAULT_XAI_MODEL);
   if (registryModel && typeof ctx?.modelRegistry?.getApiKeyAndHeaders === "function") {
@@ -672,12 +947,19 @@ async function resolveXaiAuthToken(ctx: any): Promise<string | null> {
   return (await ensureFreshXaiCredentials(credentials)).access;
 }
 
-async function postXaiJson(apiKey: string, url: string, body: Record<string, any>, signal?: AbortSignal): Promise<any> {
+async function postXaiJson(
+  apiKey: string,
+  url: string,
+  body: Record<string, any>,
+  signal?: AbortSignal,
+  headers: Record<string, string> = {},
+): Promise<any> {
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
+      ...headers,
     },
     body: JSON.stringify(body),
     signal,
@@ -696,7 +978,17 @@ async function postXaiJson(apiKey: string, url: string, body: Record<string, any
 async function createXaiResponse(apiKey: string, body: Record<string, any>, signal?: AbortSignal): Promise<any> {
   const model = xaiModelForRequest(typeof body.model === "string" ? body.model : undefined);
   const payload = rewriteXaiResponsesPayload(body, model) as Record<string, any>;
-  return postXaiJson(apiKey, XAI_RESPONSES_URL, payload, signal);
+  const usesGrokCliProxy = isGrokCliProxyModel(model.id);
+  const grokCliSessionId = usesGrokCliProxy
+    ? (typeof body.previous_response_id === "string" && body.previous_response_id) || randomUUID()
+    : undefined;
+  return postXaiJson(
+    apiKey,
+    xaiResponsesUrlForModel(model.id),
+    payload,
+    signal,
+    xaiModelRequestHeaders(model.id, grokCliSessionId),
+  );
 }
 
 function statusFromError(error: unknown): number | undefined {
@@ -708,15 +1000,24 @@ function messageFromError(error: unknown): string {
 }
 
 function streamSimpleXaiResponses(model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
+  const grokCliSessionId = options?.sessionId || (isGrokCliProxyModel(model.id) ? randomUUID() : undefined);
+  const streamModel = {
+    ...model,
+    baseUrl: xaiBaseUrlForModel(model.id),
+    headers: {
+      ...(model as any).headers,
+      ...xaiModelRequestHeaders(model.id, grokCliSessionId),
+    },
+  };
   const headers = { ...(options?.headers || {}) };
-  if (options?.sessionId && !headers["x-grok-conv-id"]) headers["x-grok-conv-id"] = options.sessionId;
+  if (grokCliSessionId && !headers["x-grok-conv-id"]) headers["x-grok-conv-id"] = grokCliSessionId;
 
-  return streamSimpleOpenAIResponses(model as Model<"openai-responses">, context, {
+  return streamSimpleOpenAIResponses(streamModel as Model<"openai-responses">, context, {
     ...options,
     headers,
     async onPayload(payload, payloadModel) {
-      const rewritten = rewriteXaiResponsesPayload(payload, payloadModel, options);
-      const userRewritten = await options?.onPayload?.(rewritten, payloadModel);
+      const rewritten = rewriteXaiResponsesPayload(payload, streamModel, options);
+      const userRewritten = await options?.onPayload?.(rewritten, streamModel);
       return userRewritten === undefined ? rewritten : userRewritten;
     },
   });
@@ -838,6 +1139,234 @@ export default function (pi: ExtensionAPI) {
   function registerXaiTools() {
     if (xaiToolRegistrations.has(pi as object)) return;
     xaiToolRegistrations.add(pi as object);
+
+    pi.registerTool({
+      name: "Read",
+      label: "Read",
+      description: "Cursor/Grok CLI compatibility shim for pi's read tool. Reads a file by path/file_path with optional offset and limit.",
+      promptSnippet: "Cursor-style alias for read; accepts path/file_path plus optional offset/limit",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path to read" },
+          file_path: { type: "string", description: "Cursor-style alias for path" },
+          offset: { type: "number", description: "1-indexed line offset" },
+          limit: { type: "number", description: "Maximum lines to read" },
+        },
+      },
+      prepareArguments: normalizeReadArgs,
+      execute: async (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+        return createReadToolDefinition(ctx.cwd).execute(toolCallId, normalizeReadArgs(params) as any, signal, onUpdate, ctx);
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "Write",
+      label: "Write",
+      description: "Cursor/Grok CLI compatibility shim for pi's write tool. Writes content/contents to path/file_path.",
+      promptSnippet: "Cursor-style alias for write; accepts path/file_path and content/contents",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path to write" },
+          file_path: { type: "string", description: "Cursor-style alias for path" },
+          content: { type: "string", description: "Content to write" },
+          contents: { type: "string", description: "Cursor-style alias for content" },
+        },
+      },
+      prepareArguments: normalizeWriteArgs,
+      execute: async (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+        return createWriteToolDefinition(ctx.cwd).execute(toolCallId, normalizeWriteArgs(params) as any, signal, onUpdate, ctx);
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "StrReplace",
+      label: "StrReplace",
+      description: "Cursor/Grok CLI compatibility shim for exact string replacement. Accepts old_string/new_string or oldText/newText.",
+      promptSnippet: "Cursor-style exact string replacement; accepts old_string/new_string",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path to edit" },
+          file_path: { type: "string", description: "Cursor-style alias for path" },
+          old_string: { type: "string", description: "Text to replace" },
+          new_string: { type: "string", description: "Replacement text" },
+          oldText: { type: "string", description: "pi-style alias for old_string" },
+          newText: { type: "string", description: "pi-style alias for new_string" },
+        },
+      },
+      prepareArguments: normalizeEditArgs,
+      execute: async (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+        return createEditToolDefinition(ctx.cwd).execute(toolCallId, normalizeEditArgs(params) as any, signal, onUpdate, ctx);
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "Edit",
+      label: "Edit",
+      description: "Cursor/Grok CLI compatibility shim for pi's edit tool. Accepts edits or old_string/new_string aliases.",
+      promptSnippet: "Cursor-style alias for edit; accepts edits or old_string/new_string",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path to edit" },
+          file_path: { type: "string", description: "Cursor-style alias for path" },
+          edits: { type: "array", description: "Array of { oldText/old_string, newText/new_string } replacements" },
+          old_string: { type: "string", description: "Text to replace" },
+          new_string: { type: "string", description: "Replacement text" },
+        },
+      },
+      prepareArguments: normalizeEditArgs,
+      execute: async (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+        return createEditToolDefinition(ctx.cwd).execute(toolCallId, normalizeEditArgs(params) as any, signal, onUpdate, ctx);
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "Delete",
+      label: "Delete",
+      description: "Cursor/Grok CLI compatibility shim for deleting a workspace file. Directories require recursive=true.",
+      promptSnippet: "Cursor-style delete for workspace files; directories require recursive=true",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path to delete" },
+          file_path: { type: "string", description: "Cursor-style alias for path" },
+          recursive: { type: "boolean", description: "Allow recursive directory deletion" },
+        },
+      },
+      prepareArguments: normalizeDeleteArgs,
+      execute: async (_toolCallId: string, params: any, signal: any, _onUpdate: any, ctx: any) => {
+        if (signal?.aborted) throw new Error("Operation aborted");
+        const { path, recursive } = normalizeDeleteArgs(params);
+        if (!path) throw new Error("Delete requires a path");
+        const absolutePath = safeWorkspacePath(ctx.cwd, path);
+        await rm(absolutePath, { recursive: !!recursive, force: false });
+        return { content: [{ type: "text", text: `Deleted ${path}` }], details: undefined };
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "LS",
+      label: "LS",
+      description: "Cursor/Grok CLI compatibility shim for pi's ls tool. Lists files under path.",
+      promptSnippet: "Cursor-style alias for ls; lists files under path",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Directory or file path" },
+          limit: { type: "number", description: "Maximum entries to return" },
+        },
+      },
+      prepareArguments: normalizeLsArgs,
+      execute: async (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+        return createLsToolDefinition(ctx.cwd).execute(toolCallId, normalizeLsArgs(params) as any, signal, onUpdate, ctx);
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "Grep",
+      label: "Grep",
+      description: "Cursor/Grok CLI compatibility shim for pi's grep tool. Accepts pattern/query plus include/glob filters.",
+      promptSnippet: "Cursor-style alias for grep; accepts pattern/query and include/glob filters",
+      parameters: {
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: "Regex or literal search pattern" },
+          query: { type: "string", description: "Cursor-style alias for pattern" },
+          path: { type: "string", description: "Directory or file to search" },
+          include: { type: "string", description: "Glob filter, e.g. *.ts" },
+          glob: { type: "string", description: "Glob filter, e.g. *.ts" },
+          glob_filter: { type: "string", description: "Cursor-style alias for glob" },
+          ignoreCase: { type: "boolean", description: "Case-insensitive search" },
+          limit: { type: "number", description: "Maximum matches" },
+        },
+      },
+      prepareArguments: normalizeGrepArgs,
+      execute: async (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+        return createGrepToolDefinition(ctx.cwd).execute(toolCallId, normalizeGrepArgs(params) as any, signal, onUpdate, ctx);
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "Glob",
+      label: "Glob",
+      description: "Cursor/Grok CLI compatibility shim for pi's find tool. Finds files matching pattern/glob.",
+      promptSnippet: "Cursor-style alias for find; accepts pattern/glob",
+      parameters: {
+        type: "object",
+        properties: {
+          pattern: { type: "string", description: "Glob pattern, e.g. **/*.ts" },
+          glob: { type: "string", description: "Cursor-style alias for pattern" },
+          path: { type: "string", description: "Directory to search" },
+          limit: { type: "number", description: "Maximum results" },
+        },
+      },
+      prepareArguments: normalizeGlobArgs,
+      execute: async (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+        return createFindToolDefinition(ctx.cwd).execute(toolCallId, normalizeGlobArgs(params) as any, signal, onUpdate, ctx);
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "Shell",
+      label: "Shell",
+      description: "Cursor/Grok CLI compatibility shim for pi's bash tool. Executes command/cmd in the workspace shell.",
+      promptSnippet: "Cursor-style alias for bash; executes command/cmd in the workspace shell",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Shell command to execute" },
+          cmd: { type: "string", description: "Alias for command" },
+          timeout: { type: "number", description: "Timeout in milliseconds" },
+        },
+      },
+      prepareArguments: normalizeShellArgs,
+      execute: async (toolCallId: string, params: any, signal: any, onUpdate: any, ctx: any) => {
+        return createBashToolDefinition(ctx.cwd).execute(toolCallId, normalizeShellArgs(params) as any, signal, onUpdate, ctx);
+      },
+    } as any);
+
+    pi.registerTool({
+      name: "WebSearch",
+      label: "WebSearch",
+      description: "Cursor/Grok CLI compatibility shim for xAI web search. Searches the web with xAI's native web_search tool.",
+      promptSnippet: "Cursor-style web search backed by xAI native web_search",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Search query" },
+          search_term: { type: "string", description: "Alias for query" },
+        },
+      },
+      prepareArguments: (args: unknown) => {
+        const params = objectFromCursorArgs(args);
+        return { query: firstString(params.query, params.search_term, params.value) || "" };
+      },
+      execute: async (_toolCallId: string, params: any, _signal: any, _onUpdate: any, ctx: any) => {
+        const query = firstString(params?.query, params?.search_term, params?.value);
+        if (!query) return xaiToolError("Error: WebSearch requires a query.");
+        const apiKey = await resolveXaiAuthToken(ctx);
+        if (!apiKey) return xaiToolError("Error: No xAI OAuth credentials found. Please run the OAuth login first.");
+
+        try {
+          const data = await createXaiResponse(
+            apiKey,
+            {
+              model: DEFAULT_XAI_MODEL,
+              input: `Search the web for: ${query}\n\nSummarize the key results with sources where available.`,
+              tools: [{ type: "web_search", enable_image_understanding: true }],
+            },
+            _signal,
+          );
+          return { content: [{ type: "text", text: extractResponsesText(data) }], details: { response_id: data.id } };
+        } catch (error) {
+          const status = statusFromError(error);
+          return xaiToolError(`xAI API Error${status ? ` ${status}` : ""}: ${messageFromError(error)}`, { error: true, status });
+        }
+      },
+    } as any);
 
     pi.registerTool({
       name: "xai_generate_text",
@@ -1232,4 +1761,10 @@ Be specific and cite examples where helpful.`;
   }
 
   registerXaiTools();
+
+  if (typeof (pi as any).on === "function") {
+    (pi as any).on("session_start", (_event: any, ctx: any) => syncCursorToolShimsForModel(ctx, ctx?.model));
+    (pi as any).on("model_select", (event: any, ctx: any) => syncCursorToolShimsForModel(ctx, event?.model));
+    (pi as any).on("before_agent_start", (_event: any, ctx: any) => syncCursorToolShimsForModel(ctx, ctx?.model));
+  }
 }

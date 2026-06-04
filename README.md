@@ -14,7 +14,7 @@
 npx pi-xai-oauth
 ```
 
-This package adds **Grok 4.3** as a fully-integrated provider in pi, with proper OAuth login, automatic token refresh, and a suite of custom tools (`xai_generate_text`, `xai_web_search`, `xai_x_search`, etc.).
+This package adds **Grok 4.3**, **Grok Build**, and **Composer 2.5** as fully-integrated xAI OAuth models in pi, with proper OAuth login, automatic token refresh, and a suite of custom tools (`xai_generate_text`, `xai_web_search`, `xai_x_search`, etc.).
 
 ---
 
@@ -45,9 +45,10 @@ This package adds **Grok 4.3** as a fully-integrated provider in pi, with proper
 - **Token refresh** — refresh tokens are stored and rotated automatically before expiry
 - **Reuses existing credentials** — auto-detects `~/.grok/auth.json` from the official Grok CLI
 - **1M context window** — Grok 4.3's full context, no truncation
+- **Coding models** — Grok Build and Composer 2.5 Fast are available from the same `xai-auth` provider
 - **Reasoning support** — configurable thinking levels: `low` / `medium` / `high`
 - **Custom xAI tools** — generate text, web search, X/Twitter search, multi-agent research, code analysis
-- **Modern API** — uses OpenAI's `responses` API format via `https://api.x.ai/v1`
+- **Modern API** — uses OpenAI's `responses` API format via `https://api.x.ai/v1`, with Grok CLI endpoint routing for CLI-only models
 
 > **✅ Verified (May 2026)**: All custom xAI tools (`xai_generate_text`, `xai_x_search`, `xai_web_search`, `xai_code_execution`, `xai_critique`, `xai_multi_agent`, `xai_deep_research`, image tools, etc.) have been tested end-to-end after the OAuth + payload repair. The provider now correctly handles mixed-model requests and native xAI tool shapes.
 
@@ -99,16 +100,29 @@ Then optionally configure it as default:
 }
 ```
 
-> **⚠️ Important: Local Development vs Published Package**
-> 
-> If you have **both** `npm:pi-xai-oauth` and a local path installed (`pi list` will show both), pi will refuse to load the local version because the tool names conflict.
-> 
-> **Fix:**
+> **⚠️ Important: install only one copy**
+>
+> `pi-xai-oauth` registers fixed tool names such as `xai_generate_text`, `xai_web_search`, and `xai_x_search`. If you install more than one copy — for example `npm:pi-xai-oauth` plus a local checkout, or two different local checkouts — pi will fail to start with `Tool "xai_generate_text" conflicts with ...` errors.
+>
+> Check with:
+> ```bash
+> pi list
+> ```
+>
+> For local development, keep only this checkout:
 > ```bash
 > pi remove npm:pi-xai-oauth
+> pi remove /path/to/other/pi-xai-oauth-copy
 > pi install .
 > ```
-> Then restart pi. The local path should now be the only one listed.
+>
+> For the published npm package, remove local checkouts:
+> ```bash
+> pi remove /path/to/local/pi-xai-oauth-copy
+> pi install npm:pi-xai-oauth
+> ```
+>
+> Use the exact package spec/path shown by `pi list` when removing duplicates.
 
 ---
 
@@ -159,6 +173,8 @@ pi --model grok-4.3 "Write a poem about Rust"
 | Model ID | Description |
 |----------|-------------|
 | `grok-4.3` | **Default.** Full reasoning, 1M context. |
+| `grok-build` | Grok Build coding model via the Grok CLI OAuth endpoint, 512K context. |
+| `grok-composer-2.5-fast` | Composer 2.5 Fast coding model via the Grok CLI OAuth endpoint, 200K context. |
 | `grok-4.20-0309-reasoning` | Grok 4.20 with automatic reasoning, 2M context. |
 | `grok-4.20-0309-non-reasoning` | Grok 4.20 fast responses, 2M context. |
 | `grok-4.20-multi-agent-0309` | Grok 4.20 multi-agent research model, 2M context. |
@@ -167,6 +183,8 @@ From the pi TUI:
 
 ```
 /model grok-4.3
+/model grok-build
+/model grok-composer-2.5-fast
 /model grok-4.20-0309-reasoning
 /model grok-4.20-multi-agent-0309
 ```
@@ -175,6 +193,8 @@ From the command line:
 
 ```bash
 pi --model grok-4.3 "Your prompt here"
+pi --model grok-build "Implement this feature"
+pi --model grok-composer-2.5-fast "Refactor this module"
 pi --model grok-4.20-0309-non-reasoning "Quick answer"
 ```
 
@@ -199,7 +219,25 @@ pi --model grok-4.3:low "What's the weather?"
 - **`medium`** — Balanced speed and depth.
 - **`low`** — Fast responses, minimal reasoning. Good for simple Q&A.
 
-`grok-4.20-0309-reasoning` reasons automatically and does not accept a configurable effort parameter. `grok-4.20-multi-agent-0309` uses `medium` for 4 agents and `high` for 16 agents.
+`grok-build` and `grok-composer-2.5-fast` are routed through xAI's Grok CLI OAuth endpoint using the same X account OAuth token. `grok-composer-2.5-fast` does not accept configurable reasoning effort. `grok-4.20-0309-reasoning` reasons automatically and does not accept a configurable effort parameter. `grok-4.20-multi-agent-0309` uses `medium` for 4 agents and `high` for 16 agents.
+
+### Composer / Grok Build Tool Compatibility
+
+Composer 2.5 and Grok Build are trained against Cursor/Grok CLI-style tool names. When either `grok-composer-2.5-fast` or `grok-build` is selected, this package automatically enables compatibility shims that map those tool calls onto pi's built-in tools:
+
+| Cursor/Grok CLI tool | pi tool used underneath |
+|----------------------|-------------------------|
+| `Read` | `read` |
+| `Write` | `write` |
+| `StrReplace` / `Edit` | `edit` |
+| `Delete` | workspace-safe file delete |
+| `LS` | `ls` |
+| `Grep` | `grep` |
+| `Glob` | `find` |
+| `Shell` | `bash` |
+| `WebSearch` | xAI native web search |
+
+The shims also normalize common Cursor argument names, such as `file_path`, `contents`, `old_string` / `new_string`, `query`, `include`, `glob_filter`, and `cmd`. They are disabled again when you switch back to non-Grok-CLI models such as `grok-4.3`.
 
 ---
 
@@ -378,20 +416,40 @@ If you have the official Grok CLI installed and authenticated (`~/.grok/auth.jso
 
 ### "What model am I using?"
 
-### `pi list` shows both npm package and local path
-
-This is normal during development when you have run `pi install .` alongside the published npm package. The local path takes precedence. To clean up:
-
-```bash
-pi remove npm:pi-xai-oauth
-pi install npm:pi-xai-oauth
-```
-
 In the pi TUI, the current model is shown in the status bar. You can also check with:
 
 ```
 /model
 ```
+
+### `Tool "xai_generate_text" conflicts with ...` or `pi list` shows duplicate copies
+
+You have more than one copy of this extension installed. This commonly happens when updating from npm to a local checkout, or when switching between two local worktrees. pi refuses to load duplicate tool names.
+
+First inspect installed packages:
+
+```bash
+pi list
+```
+
+Then remove every duplicate `pi-xai-oauth` entry except the one you want to use.
+
+For local development from this checkout:
+
+```bash
+pi remove npm:pi-xai-oauth
+pi remove /path/to/old/pi-xai-oauth-copy
+pi install .
+```
+
+For normal npm usage:
+
+```bash
+pi remove /path/to/local/pi-xai-oauth-copy
+pi install npm:pi-xai-oauth
+```
+
+Restart pi after cleanup. `pi list` should show only one `pi-xai-oauth` entry.
 
 ---
 
@@ -402,6 +460,8 @@ pi update npm:pi-xai-oauth
 ```
 
 This pulls the latest version from npm and updates your installed extension.
+
+If you previously installed a local checkout with `pi install .`, `pi update npm:pi-xai-oauth` will not replace that local copy. Run `pi list` and make sure only one `pi-xai-oauth` entry is installed. Remove duplicate npm/local/worktree copies before restarting pi.
 
 ---
 

@@ -28,8 +28,8 @@ function color(text, c) {
 }
 
 function printHeader() {
-  console.log(`\n${color("🚀  pi-xai-oauth", "cyan")} — ${color("xAI Grok 4.3 + OAuth for pi", "bold")}\n`);
-  console.log("   One-command setup for Grok 4.3 (1M context) with clean OAuth login.\n");
+  console.log(`\n${color("🚀  pi-xai-oauth", "cyan")} — ${color("xAI Grok + OAuth for pi", "bold")}\n`);
+  console.log("   One-command setup for Grok 4.3, Grok Build, and Composer 2.5 with clean OAuth login.\n");
 }
 
 function checkPi() {
@@ -133,10 +133,10 @@ function printNextSteps(nonInteractive = false) {
     console.log(`   ${color("2.", "bold")} Start chatting with Grok 4.3 (already set as default)`);
     console.log(`      ${color("pi", "cyan")}\n`);
   } else {
-    console.log("Grok 4.3 + xAI OAuth is now configured and ready.\n");
+    console.log("Grok 4.3, Grok Build, Composer 2.5 + xAI OAuth are now configured and ready.\n");
   }
 
-  console.log("You now have access to powerful reasoning + 1M context!\n");
+  console.log("You now have access to powerful reasoning, coding models, and 1M context!\n");
   console.log("Bonus tools available:");
   console.log("   • xai_generate_text     — Generate text with full reasoning");
   console.log("   • xai_multi_agent       — Multi-agent research with web/X tools");

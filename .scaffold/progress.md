@@ -82,4 +82,17 @@ Update this file frequently during execution.
 - [x] Initialized real git repo, switched to feature branch, updated docs
 - [x] Working tree clean, up-to-date with `origin/main`
 
-**Current branch:** feature/xai-tools-all-verified
+**Current branch:** feature/add-composer-2-5-models
+
+## Phase 9: Add Composer 2.5 model selection
+- [x] Created branch `feature/add-composer-2-5-models`.
+- [x] Added `grok-composer-2.5-fast` and `grok-build` to the `xai-auth` provider model catalog.
+- [x] Routed Grok CLI-only models through `https://cli-chat-proxy.grok.com/v1` with Grok CLI OAuth headers while keeping Grok 4.3/default models on `https://api.x.ai/v1`.
+- [x] Updated custom tool request routing so `xai_generate_text` can use Composer 2.5/Grok Build model IDs.
+- [x] Updated README/setup copy and verification coverage.
+- [x] Added local `typescript` dev dependency so `npm run typecheck` resolves the real compiler and passes consistently.
+- [x] Verified with `npm test`, `npm run typecheck`, `node bin/setup.js --help`, `git diff --check`, `npm pack --dry-run`, and `pi install .`.
+- [x] Added README troubleshooting/updating guidance for duplicate npm/local/worktree installs causing `xai_*` tool conflicts.
+- [x] Added Cursor/Grok CLI tool shims (`Read`, `Write`, `StrReplace`, `Edit`, `Delete`, `LS`, `Grep`, `Glob`, `Shell`, `WebSearch`) for Composer 2.5/Grok Build and model-scoped activation.
+- [x] Added verification for shim registration, activation/deactivation, argument normalization, and Grep/Glob/Read/Write/StrReplace/Shell/Delete execution.
+- [x] Documented Composer/Grok Build tool compatibility in README.
