@@ -127,8 +127,8 @@ async function verifyCursorToolShims(tools) {
     assert.ok(tools.has(name), `${name} Cursor/Grok CLI shim should be registered`);
   }
 
-  const grepResult = await runCursorTool(tools, "Grep", { query: "DEFAULT_XAI_MODEL", include: "*.ts", path: "extensions", limit: 5 });
-  assert.match(grepResult.content[0].text, /xai\/(auth|constants|models)\.ts|xai-oauth\.ts/, "Grep shim should map query/include to pi grep pattern/glob");
+  const grepResult = await runCursorTool(tools, "Grep", { query: "export const DEFAULT_XAI_MODEL", include: "*.ts", path: "extensions", limit: 5 });
+  assert.match(grepResult.content[0].text, /xai\/constants\.ts/, "Grep shim should map query/include to pi grep pattern/glob");
 
   const globResult = await runCursorTool(tools, "Glob", { glob: "xai-oauth.ts" });
   assert.match(globResult.content[0].text, /extensions\/xai-oauth\.ts/, "Glob shim should map to pi find");
@@ -280,30 +280,37 @@ async function verifyOAuthManualCallbackUrlState(provider) {
 
 async function verifyOAuthManualWrongStateIgnored(provider) {
   const progress = [];
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 5_000);
   let authUrl;
-  const login = provider.oauth.login({
-    onPrompt: async () => "n",
-    onProgress(message) {
-      progress.push(message);
-    },
-    onAuth(auth) {
-      authUrl = new URL(auth.url);
-      const redirectUri = authUrl.searchParams.get("redirect_uri");
-      const expectedState = authUrl.searchParams.get("state");
-      setTimeout(async () => {
-        const good = new URL(redirectUri);
-        good.searchParams.set("code", "manual-wrong-state-fallback-good");
-        good.searchParams.set("state", expectedState);
-        await originalFetch(good);
-      }, 10);
-    },
-    onManualCodeInput: async () => "code=bad-manual-state-code&state=wrong-state",
-  });
 
-  const credentials = await login;
-  assert.equal(credentials.access, "access-manual-wrong-state-fallback-good", "manual callback query with wrong state should be ignored");
-  assert.ok(progress.some((message) => /OAuth state did not match/.test(message)), "wrong-state manual callback should log that it was ignored");
-  assert.ok(authUrl, "login should provide an authorization URL");
+  try {
+    const credentials = await provider.oauth.login({
+      onPrompt: async () => "n",
+      onProgress(message) {
+        progress.push(message);
+      },
+      onAuth(auth) {
+        authUrl = new URL(auth.url);
+        const redirectUri = authUrl.searchParams.get("redirect_uri");
+        const expectedState = authUrl.searchParams.get("state");
+        setTimeout(async () => {
+          const good = new URL(redirectUri);
+          good.searchParams.set("code", "manual-wrong-state-fallback-good");
+          good.searchParams.set("state", expectedState);
+          await originalFetch(good);
+        }, 10);
+      },
+      onManualCodeInput: async () => "code=bad-manual-state-code&state=wrong-state",
+      signal: controller.signal,
+    });
+
+    assert.equal(credentials.access, "access-manual-wrong-state-fallback-good", "manual callback query with wrong state should be ignored");
+    assert.ok(progress.some((message) => /OAuth state did not match/.test(message)), "wrong-state manual callback should log that it was ignored");
+    assert.ok(authUrl, "login should provide an authorization URL");
+  } finally {
+    clearTimeout(abortTimer);
+  }
 }
 
 async function main() {
