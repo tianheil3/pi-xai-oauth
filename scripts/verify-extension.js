@@ -394,6 +394,26 @@ async function main() {
 
     const { body: imageGenBody } = await runTool(tools, "xai_generate_image", { prompt: "a crisp diagram" }, /Generated 1 image/);
     assert.equal(imageGenBody.model, "grok-imagine-image-quality");
+    assert.equal(imageGenBody.size, undefined);
+
+    const { body: imageGenWideBody } = await runTool(
+      tools,
+      "xai_generate_image",
+      { prompt: "a banner", aspect_ratio: "16:9", resolution: "2k" },
+      /Generated 1 image/,
+    );
+    assert.equal(imageGenWideBody.aspect_ratio, "16:9");
+    assert.equal(imageGenWideBody.resolution, "2k");
+    assert.equal(imageGenWideBody.size, undefined);
+
+    const { body: legacyImageGenBody } = await runTool(
+      tools,
+      "xai_generate_image",
+      { prompt: "square icon", size: "1024x1024" },
+      /Generated 1 image/,
+    );
+    assert.equal(legacyImageGenBody.aspect_ratio, "1:1");
+    assert.equal(legacyImageGenBody.size, undefined);
 
     const { body: multiAgentBody, result: multiAgentResult } = await runTool(tools, "xai_multi_agent", { query: "latest xAI tools", num_agents: 4 });
     assert.equal(multiAgentBody.model, "grok-4.20-multi-agent-0309");

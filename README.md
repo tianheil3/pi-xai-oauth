@@ -304,9 +304,13 @@ Generate images with xAI's current image generation model.
 ```json
 {
   "prompt": "A clean product diagram of an OAuth flow",
-  "model": "grok-imagine-image-quality"
+  "model": "grok-imagine-image-quality",
+  "aspect_ratio": "16:9",
+  "resolution": "2k"
 }
 ```
+
+> **Note:** xAI's image API no longer accepts OpenAI-style `size` values like `1024x1024`. Use `aspect_ratio` and `resolution` instead. The deprecated `size` parameter is still accepted for backward compatibility and mapped to the closest `aspect_ratio`.
 
 ### `xai_analyze_image`
 Analyze an image URL, data URL, or local `.png` / `.jpg` path with Grok vision.

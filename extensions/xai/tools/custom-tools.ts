@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveXaiAuthToken } from "../auth";
 import { DEFAULT_XAI_IMAGE_MODEL, DEFAULT_XAI_MODEL, XAI_IMAGES_GENERATIONS_URL } from "../constants";
-import { normalizeXaiImageInput } from "../images";
+import { buildXaiImageGenerationBody, normalizeXaiImageInput, type XaiImageGenerationParams } from "../images";
 import { grokSupportsReasoningEffort } from "../models";
 import { createXaiResponse, postXaiJson } from "../responses";
 import { extractResponsesText, messageFromError, statusFromError } from "../text";
@@ -267,24 +267,36 @@ Be specific and cite examples where helpful.`;
         properties: {
           prompt: { type: "string", description: "Detailed description of the image to generate" },
           model: { type: "string", description: "Image model to use", default: DEFAULT_XAI_IMAGE_MODEL },
-          size: { type: "string", description: "Image size (e.g. 1024x1024, 1792x1024)", default: "1024x1024" },
-          n: { type: "number", description: "Number of images to generate (1-4)", default: 1 }
+          aspect_ratio: {
+            type: "string",
+            description: "Aspect ratio (1:1, 16:9, 9:16, 4:3, 3:4, auto, etc.)",
+          },
+          resolution: {
+            type: "string",
+            description: "Output resolution",
+            enum: ["1k", "2k"],
+          },
+          size: {
+            type: "string",
+            description: "Deprecated. Use aspect_ratio instead (e.g. 1024x1024 maps to 1:1).",
+          },
+          n: { type: "number", description: "Number of images to generate (1-4)", default: 1 },
         },
         required: ["prompt"],
       },
-      execute: async (_toolCallId: string, params: { prompt?: string; model?: string; size?: string; n?: number }, _signal: any, _onUpdate: any, ctx: any) => {
+      execute: async (_toolCallId: string, params: XaiImageGenerationParams, _signal: any, _onUpdate: any, ctx: any) => {
         const apiKey = await resolveXaiAuthToken(ctx);
         if (!apiKey) {
           return xaiToolError("Error: No xAI OAuth credentials found. Please run the OAuth login first.", { prompt: params?.prompt });
         }
         let data: any;
         try {
-          data = await postXaiJson(apiKey, XAI_IMAGES_GENERATIONS_URL, {
-            model: params.model || DEFAULT_XAI_IMAGE_MODEL,
-            prompt: params.prompt,
-            n: params.n || 1,
-            size: params.size || "1024x1024"
-          }, _signal);
+          data = await postXaiJson(
+            apiKey,
+            XAI_IMAGES_GENERATIONS_URL,
+            buildXaiImageGenerationBody(params, DEFAULT_XAI_IMAGE_MODEL),
+            _signal,
+          );
         } catch (error) {
           const status = statusFromError(error);
           return xaiToolError(`xAI Image API Error${status ? ` ${status}` : ""}: ${messageFromError(error)}`, { error: true, status, prompt: params.prompt });

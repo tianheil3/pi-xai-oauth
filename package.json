@@ -24,6 +24,7 @@
     "scaffold": "node bin/setup.js --scaffold",
     "setup": "node bin/setup.js",
     "test": "node scripts/verify-extension.js",
+    "test:image-live": "bash scripts/test-image-generation-live.sh",
     "typecheck": "npx tsc --noEmit"
   },
   "pi": {
