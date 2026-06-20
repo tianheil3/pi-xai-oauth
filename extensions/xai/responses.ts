@@ -131,7 +131,22 @@ export async function createXaiResponse(apiKey: string, body: Record<string, any
   );
 }
 
-/** Stream pi's simple Responses flow through xAI with payload normalization. */
+/**
+ * Stream pi's simple Responses flow through xAI with payload normalization.
+ *
+ * The transport is delegated to pi's OpenAI Responses helper with a temporary
+ * `openai-responses` API tag so pi 0.79.8+ accepts the helper call, while xAI
+ * routing headers, request URLs, and payload rewriting continue to use the
+ * original xAI model metadata. Returned events are forwarded through an
+ * assistant stream exposing async iteration and `result()`. Delegate load or
+ * stream failures are converted into terminal error events with xAI provider
+ * metadata instead of escaping as unstructured promise failures.
+ *
+ * @param model xAI provider model selected by pi.
+ * @param context Conversation messages and tool context to stream.
+ * @param options Simple stream options, including OAuth token, session ID, cancellation, and payload hooks.
+ * @returns A forwarding assistant stream compatible with pi's async iterator and `result()` contract.
+ */
 export function streamSimpleXaiResponses(model: Model<Api>, context: Context, options?: SimpleStreamOptions) {
   const grokCliSessionId = options?.sessionId || (isGrokCliProxyModel(model.id) ? randomUUID() : undefined);
   const streamModel = {

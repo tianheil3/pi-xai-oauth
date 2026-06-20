@@ -130,6 +130,21 @@ async function verifyCursorToolShims(tools) {
   const grepResult = await runCursorTool(tools, "Grep", { query: "DEFAULT_XAI_MODEL", include: "*.ts", path: "extensions", limit: 5 });
   assert.match(grepResult.content[0].text, /xai\/(auth|constants|models)\.ts|xai-oauth\.ts/, "Grep shim should map query/include to pi grep pattern/glob");
 
+  const grepContextResult = await runCursorTool(tools, "Grep", {
+    query: "DEFAULT_XAI_MODEL",
+    include: "constants.ts",
+    path: "extensions/xai",
+    context: 1,
+    limit: 1,
+  });
+  assert.match(grepContextResult.content[0].text, /constants\.ts-17-.*XAI_PROVIDER_ID/, "Grep shim should include leading context lines");
+  assert.match(grepContextResult.content[0].text, /constants\.ts:18:.*DEFAULT_XAI_MODEL/, "Grep shim should mark the matched line");
+  await assert.rejects(
+    () => runCursorTool(tools, "Grep", { query: "(a+)+$", include: "constants.ts", path: "extensions/xai" }),
+    /Unsafe regex pattern/,
+    "Grep shim should reject regexes with obvious catastrophic-backtracking structure",
+  );
+
   const globResult = await runCursorTool(tools, "Glob", { glob: "xai-oauth.ts", limit: 5 });
   assert.match(globResult.content[0].text, /extensions\/xai-oauth\.ts/, "Glob shim should map glob to pi find");
 

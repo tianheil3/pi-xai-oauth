@@ -32,6 +32,8 @@ import {
 
 const DEFAULT_CURSOR_GLOB_LIMIT = 1000;
 const DEFAULT_CURSOR_GREP_LIMIT = 1000;
+const MAX_CURSOR_REGEX_LENGTH = 500;
+const MAX_CURSOR_GREP_CONTEXT_LINES = 20;
 const SKIPPED_SEARCH_DIRS = new Set([".git", ".omp", "node_modules"]);
 
 function toPosixPath(filePath: string): string {
@@ -76,6 +78,68 @@ function globMatches(pattern: string | undefined, relativePath: string): boolean
 
 function throwIfAborted(signal: any) {
   if (signal?.aborted) throw new Error("Operation aborted");
+}
+
+function isRegexQuantifierStart(char: string | undefined): boolean {
+  return char === "*" || char === "+" || char === "?" || char === "{";
+}
+
+function hasUnsafeRegexStructure(pattern: string): boolean {
+  let inCharacterClass = false;
+  const groupStack: Array<{ hasQuantifier: boolean; hasAlternation: boolean }> = [];
+
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "\\") {
+      if (/\d/.test(pattern[index + 1] || "")) return true;
+      index += 1;
+      continue;
+    }
+    if (inCharacterClass) {
+      if (char === "]") inCharacterClass = false;
+      continue;
+    }
+    if (char === "[") {
+      inCharacterClass = true;
+      continue;
+    }
+    if (char === "(") {
+      groupStack.push({ hasQuantifier: false, hasAlternation: false });
+      continue;
+    }
+    if (char === "|") {
+      const current = groupStack[groupStack.length - 1];
+      if (current) current.hasAlternation = true;
+      continue;
+    }
+    if (char === ")") {
+      const group = groupStack.pop();
+      if (group && (group.hasQuantifier || group.hasAlternation) && isRegexQuantifierStart(pattern[index + 1])) {
+        return true;
+      }
+      continue;
+    }
+    if (isRegexQuantifierStart(char)) {
+      const current = groupStack[groupStack.length - 1];
+      if (current) current.hasQuantifier = true;
+    }
+  }
+
+  return false;
+}
+
+function createSafeRegexMatcher(pattern: string, ignoreCase: boolean): RegExp {
+  if (pattern.length > MAX_CURSOR_REGEX_LENGTH) {
+    throw new Error(`Regex pattern exceeds maximum length of ${MAX_CURSOR_REGEX_LENGTH} characters`);
+  }
+  if (hasUnsafeRegexStructure(pattern)) {
+    throw new Error("Unsafe regex pattern: nested quantifiers, quantified alternation, and backreferences are not supported");
+  }
+  try {
+    return new RegExp(pattern, ignoreCase ? "i" : undefined);
+  } catch (error) {
+    throw new Error(`Invalid regex pattern: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function pathExists(absolutePath: string): Promise<boolean> {
@@ -154,14 +218,19 @@ async function runLocalGrep(cwd: string, params: ReturnType<typeof normalizeGrep
 
   const ignoreCase = !!params.ignoreCase;
   const literalPattern = ignoreCase ? pattern.toLowerCase() : pattern;
-  const matcher = params.literal ? undefined : new RegExp(pattern, ignoreCase ? "i" : undefined);
+  const matcher = params.literal ? undefined : createSafeRegexMatcher(pattern, ignoreCase);
   const limit = Math.max(1, params.limit || DEFAULT_CURSOR_GREP_LIMIT);
+  const contextLines = Math.min(
+    MAX_CURSOR_GREP_CONTEXT_LINES,
+    Math.max(0, Math.floor(params.context || 0)),
+  );
   const files = await collectLocalFiles(searchPath, searchPath, params.glob, signal);
   const outputLines: string[] = [];
+  let matchCount = 0;
   let limitReached = false;
 
   for (const filePath of files) {
-    if (outputLines.length >= limit) {
+    if (matchCount >= limit) {
       limitReached = true;
       break;
     }
@@ -178,15 +247,24 @@ async function runLocalGrep(cwd: string, params: ReturnType<typeof normalizeGrep
         ? (ignoreCase ? line.toLowerCase() : line).includes(literalPattern)
         : matcher!.test(line);
       if (!matched) continue;
-      outputLines.push(`${displayPath}:${index + 1}: ${line}`);
-      if (outputLines.length >= limit) {
+
+      const start = Math.max(0, index - contextLines);
+      const end = Math.min(lines.length - 1, index + contextLines);
+      for (let current = start; current <= end; current += 1) {
+        const isMatchLine = current === index;
+        const separator = isMatchLine ? ":" : "-";
+        outputLines.push(`${displayPath}${separator}${current + 1}${separator} ${lines[current]}`);
+      }
+
+      matchCount++;
+      if (matchCount >= limit) {
         limitReached = true;
         break;
       }
     }
   }
 
-  if (outputLines.length === 0) {
+  if (matchCount === 0) {
     return { content: [{ type: "text", text: "No matches found" }], details: undefined };
   }
 
