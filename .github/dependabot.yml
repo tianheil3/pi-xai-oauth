@@ -5,4 +5,7 @@ updates:
     schedule:
       interval: "weekly"
     ignore:
+      # Dependabot security run 27856660362 / job 82445322754 failed with
+      # `security_update_not_needed` for protobufjs; keep this ignored until
+      # Dependabot no longer raises this false-positive update.
       - dependency-name: "protobufjs"
