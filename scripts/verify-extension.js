@@ -63,6 +63,14 @@ function headerValue(headers, name) {
   return headers[name] || headers[name.toLowerCase()];
 }
 
+function urlOriginIs(url, expectedOrigin) {
+  try {
+    return new URL(url).origin === expectedOrigin;
+  } catch {
+    return false;
+  }
+}
+
 function loadExtension() {
   const providers = new Map();
   const tools = new Map();
@@ -101,11 +109,11 @@ function authContext() {
   };
 }
 
-async function runTool(tools, name, params = {}, expectedText = "OK", requestPrefix = "https://api.x.ai") {
+async function runTool(tools, name, params = {}, expectedText = "OK", requestOrigin = "https://api.x.ai") {
   const controller = new AbortController();
   const before = requests.length;
   const result = await tools.get(name).execute("call_test", params, controller.signal, () => {}, authContext());
-  const request = requests.slice(before).find((entry) => entry.url?.startsWith(requestPrefix));
+  const request = requests.slice(before).find((entry) => entry.url && urlOriginIs(entry.url, requestOrigin));
   if (expectedText instanceof RegExp) {
     assert.match(result.content[0].text, expectedText, `${name} should surface mocked xAI text`);
   } else {
@@ -230,7 +238,7 @@ async function verifyRealGuardSemantics() {
   );
   assert.doesNotMatch(acceptedMessage, /Mismatched api/, "an openai-responses model must satisfy the real guard");
   assert.ok(
-    requests.slice(before).some((entry) => entry.url?.startsWith("https://api.x.ai")),
+    requests.slice(before).some((entry) => entry.url && urlOriginIs(entry.url, "https://api.x.ai")),
     "guarded call should reach the xAI endpoint",
   );
 }
@@ -254,7 +262,7 @@ async function verifyXaiStreamPassesRealGuard(provider) {
   );
   assert.doesNotMatch(message, /Mismatched api/, "xAI provider stream must satisfy pi 0.79.8 API guard");
   assert.ok(
-    requests.slice(before).some((entry) => entry.url?.startsWith("https://api.x.ai")),
+    requests.slice(before).some((entry) => entry.url && urlOriginIs(entry.url, "https://api.x.ai")),
     "xAI stream should reach the xAI endpoint past the guard",
   );
 }
@@ -275,7 +283,7 @@ async function verifyCliModelStreamRouting(provider) {
     { apiKey: "oauth-token", sessionId: "session-test" },
   );
   await stream.result();
-  const request = requests.slice(before).find((entry) => entry.url?.startsWith("https://cli-chat-proxy.grok.com"));
+  const request = requests.slice(before).find((entry) => entry.url && urlOriginIs(entry.url, "https://cli-chat-proxy.grok.com"));
   assert.ok(request, "Composer 2.5 provider streams should route to the Grok CLI endpoint");
   assert.equal(request.body.model, "grok-composer-2.5-fast");
   assert.equal(request.body.reasoning, undefined, "Composer 2.5 provider streams should not send reasoning effort");
