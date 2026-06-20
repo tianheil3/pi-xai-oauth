@@ -126,3 +126,10 @@ Update this file frequently during execution.
 - [x] Verified with `npm test` and `npm run typecheck`.
 
 **Current branch:** feature/issue-19-api-guard
+
+## Phase 13: Issue 19 real-package verification and 1.2.4 release staging
+- [x] Staged docs for the `pi-xai-oauth` 1.2.4 update path covering published npm installs and local checkout reinstalls.
+- [x] Recorded that the issue 19 verification work now targets the real pi 0.79.x API guard instead of a mocked guard.
+- [x] Intended development dependency pins for the verification branch: `@earendil-works/pi-ai@^0.79.8` and `@earendil-works/pi-coding-agent@^0.79.8`.
+
+**Current branch:** feature/issue-19-api-guard

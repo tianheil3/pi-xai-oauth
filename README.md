@@ -461,6 +461,12 @@ pi update npm:pi-xai-oauth
 
 This pulls the latest version from npm and updates your installed extension.
 
+pi 0.79.8+ enforces an OpenAI Responses API guard. `pi-xai-oauth` 1.2.4 handles that guard for Grok/xAI streaming. If you installed the published npm package, update with the command above. If you are testing a local checkout instead, reinstall the checkout:
+
+```bash
+pi remove npm:pi-xai-oauth && pi install .
+```
+
 If you previously installed a local checkout with `pi install .`, `pi update npm:pi-xai-oauth` will not replace that local copy. Run `pi list` and make sure only one `pi-xai-oauth` entry is installed. Remove duplicate npm/local/worktree copies before restarting pi.
 
 ---
