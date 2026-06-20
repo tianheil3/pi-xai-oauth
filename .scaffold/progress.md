@@ -135,5 +135,7 @@ Update this file frequently during execution.
 - [x] Replaced the mocked API-guard regression with real-package guard coverage that handles synchronous guard throws and `result.errorMessage`.
 - [x] Adapted Cursor/Grok CLI shims for pi-coding-agent 0.79.8 by avoiding external `rg`/`fd` downloads in the compatibility shim tests.
 - [x] Verified final branch with `npm test`, `npm run typecheck`, and `node bin/setup.js --help`.
+- [x] `npm pack --dry-run` confirmed the 1.2.4 tarball excludes agent worktrees/state.
+- [ ] `npm publish` is blocked by npm one-time-password authentication; rerun after completing npm CLI auth.
 
 **Current branch:** feature/issue-19-api-guard
