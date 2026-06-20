@@ -175,42 +175,57 @@ async function verifyCursorToolActivation(loadResult) {
   assert.ok(!getActiveTools().includes("Grep"), "Cursor shims should be disabled for non-Grok-CLI xAI models");
 }
 
-async function verifyOpenAIResponsesDelegateApi() {
-  const mockPath = path.join(repoRoot, ".tmp-pi-ai-guard.cjs");
-  await fs.writeFile(
-    mockPath,
-    `
-exports.streamSimpleOpenAIResponses = (model, context, options = {}) => {
-  if (model.api !== "openai-responses") {
-    throw new Error(\`Mismatched api: \${model.api} expected openai-responses\`);
+function lastResultErrorMessage(result) {
+  return result && typeof result.errorMessage === "string" ? result.errorMessage : "";
+}
+
+async function captureStreamResultMessage(createStream) {
+  try {
+    const result = await createStream().result();
+    return lastResultErrorMessage(result);
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
   }
-  global.__xaiOpenAIResponsesDelegateModel = model;
-  return {
-    async result() {
-      const rewritten = await options.onPayload?.({
-        model: model.id,
-        input: [{ role: "developer", content: "system rules" }, { role: "user", content: "hello" }],
-        prompt_cache_retention: "24h",
-      }, model);
-      return { api: model.api, rewritten };
-    },
-    async *[Symbol.asyncIterator]() {},
+}
+
+async function verifyRealGuardSemantics() {
+  const { streamSimpleOpenAIResponses } = await import("@earendil-works/pi-ai");
+  const context = { messages: [{ role: "user", content: "hello", timestamp: Date.now() }] };
+  const baseModel = {
+    id: "grok-4.3",
+    provider: "xai-auth",
+    baseUrl: "https://api.x.ai/v1",
+    headers: {},
+    reasoning: true,
+    input: ["text", "image"],
   };
-};
-`,
+
+  const rejectedMessage = await captureStreamResultMessage(() =>
+    streamSimpleOpenAIResponses({ ...baseModel, api: "xai-responses" }, context, { apiKey: "oauth-token" }),
+  );
+  assert.match(
+    rejectedMessage,
+    /Mismatched api/,
+    "installed @earendil-works/pi-ai must API-guard openai-responses (bump dev dep to 0.79.8)",
   );
 
-  try {
-    const guardedJiti = createJiti(__filename, {
-      interopDefault: true,
-      moduleCache: false,
-      alias: { "@earendil-works/pi-ai": mockPath },
-    });
-    const { streamSimpleXaiResponses } = guardedJiti(path.join(repoRoot, "extensions", "xai", "responses.ts"));
-    let callbackModelApi;
-    const stream = streamSimpleXaiResponses(
+  const before = requests.length;
+  const acceptedMessage = await captureStreamResultMessage(() =>
+    streamSimpleOpenAIResponses({ ...baseModel, api: "openai-responses" }, context, { apiKey: "oauth-token" }),
+  );
+  assert.doesNotMatch(acceptedMessage, /Mismatched api/, "an openai-responses model must satisfy the real guard");
+  assert.ok(
+    requests.slice(before).some((entry) => entry.url?.startsWith("https://api.x.ai")),
+    "guarded call should reach the xAI endpoint",
+  );
+}
+
+async function verifyXaiStreamPassesRealGuard(provider) {
+  const before = requests.length;
+  const message = await captureStreamResultMessage(() =>
+    provider.streamSimple(
       {
-        id: "grok-build",
+        id: "grok-4.3",
         provider: "xai-auth",
         api: "xai-responses",
         baseUrl: "https://api.x.ai/v1",
@@ -219,28 +234,14 @@ exports.streamSimpleOpenAIResponses = (model, context, options = {}) => {
         input: ["text", "image"],
       },
       { messages: [{ role: "user", content: "hello", timestamp: Date.now() }] },
-      {
-        apiKey: "oauth-token",
-        sessionId: "delegate-session",
-        onPayload(payload, callbackModel) {
-          callbackModelApi = callbackModel.api;
-          return payload;
-        },
-      },
-    );
-
-    const result = await stream.result();
-    const delegateModel = global.__xaiOpenAIResponsesDelegateModel;
-    assert.equal(delegateModel.api, "openai-responses", "xAI streams should satisfy pi's OpenAI Responses API guard");
-    assert.equal(delegateModel.baseUrl, "https://cli-chat-proxy.grok.com/v1", "delegate model should preserve xAI model routing");
-    assert.equal(delegateModel.headers["x-grok-conv-id"], "delegate-session", "delegate model should preserve xAI routing headers");
-    assert.equal(callbackModelApi, "xai-responses", "payload hooks should still receive xAI model metadata");
-    assert.equal(result.rewritten.prompt_cache_retention, undefined, "xAI payload rewrite should still remove unsupported retention");
-    assert.equal(result.rewritten.prompt_cache_key, "delegate-session", "xAI payload rewrite should still apply session cache keys");
-  } finally {
-    delete global.__xaiOpenAIResponsesDelegateModel;
-    await fs.rm(mockPath, { force: true }).catch(() => {});
-  }
+      { apiKey: "oauth-token", sessionId: "guard-session" },
+    ),
+  );
+  assert.doesNotMatch(message, /Mismatched api/, "xAI provider stream must satisfy pi 0.79.8 API guard");
+  assert.ok(
+    requests.slice(before).some((entry) => entry.url?.startsWith("https://api.x.ai")),
+    "xAI stream should reach the xAI endpoint past the guard",
+  );
 }
 
 
@@ -395,7 +396,8 @@ async function main() {
     assert.equal(provider.models.find((model) => model.id === "grok-4.20-0309-reasoning")?.contextWindow, 2_000_000);
     assert.ok(provider.models.some((model) => model.id === "grok-4.20-multi-agent-0309"));
 
-    await verifyOpenAIResponsesDelegateApi();
+    await verifyRealGuardSemantics();
+    await verifyXaiStreamPassesRealGuard(provider);
 
     await verifyCliModelStreamRouting(provider);
     await verifyCursorToolActivation(firstLoad);
