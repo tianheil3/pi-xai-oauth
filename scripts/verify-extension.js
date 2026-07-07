@@ -490,6 +490,43 @@ async function main() {
 
     const { body: imageGenBody } = await runTool(tools, "xai_generate_image", { prompt: "a crisp diagram" }, /Generated 1 image/);
     assert.equal(imageGenBody.model, "grok-imagine-image-quality");
+    const imageTool = tools.get("xai_generate_image");
+    assert.equal(Object.hasOwn(imageGenBody, "size"), false, "image generation should not send unsupported size defaults");
+    assert.equal(Object.hasOwn(imageGenBody, "n"), false, "image generation should not send n unless explicitly requested");
+    assert.equal(imageTool.parameters.properties.size, undefined, "image tool schema should not advertise unsupported size");
+    assert.equal(imageTool.parameters.properties.n.default, undefined, "image tool schema should not inject n when omitted");
+    assert.equal(imageTool.parameters.properties.n.minimum, 1, "image tool schema should reject image counts below one");
+    assert.equal(imageTool.parameters.properties.n.maximum, 4, "image tool schema should reject image counts above four");
+
+    const { body: imageBatchBody } = await runTool(
+      tools,
+      "xai_generate_image",
+      { prompt: "three crisp diagrams", n: 3 },
+      /Generated 1 image/,
+    );
+    assert.equal(imageBatchBody.n, 3, "image generation should forward an explicit n value");
+    assert.equal(Object.hasOwn(imageBatchBody, "size"), false, "explicit n requests should still omit size");
+
+    const requestsBeforeUnsupportedSize = requests.length;
+    const unsupportedSizeResult = await imageTool.execute(
+      "call_unsupported_size",
+      { prompt: "a crisp diagram", size: "1024x1024" },
+      undefined,
+      () => {},
+      authContext(),
+    );
+    assert.match(unsupportedSizeResult.content[0].text, /does not support the 'size' parameter/);
+    assert.equal(requests.length, requestsBeforeUnsupportedSize, "unsupported size should fail before sending a request");
+
+    const invalidCountResult = await imageTool.execute(
+      "call_invalid_image_count",
+      { prompt: "a crisp diagram", n: 0 },
+      undefined,
+      () => {},
+      authContext(),
+    );
+    assert.match(invalidCountResult.content[0].text, /must be an integer from 1 to 4/);
+    assert.equal(requests.length, requestsBeforeUnsupportedSize, "invalid n should fail before sending a request");
 
     const { body: multiAgentBody, result: multiAgentResult } = await runTool(tools, "xai_multi_agent", { query: "latest xAI tools", num_agents: 4 });
     assert.equal(multiAgentBody.model, "grok-4.20-multi-agent-0309");

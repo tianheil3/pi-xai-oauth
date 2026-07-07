@@ -127,6 +127,16 @@ Update this file frequently during execution.
 
 **Current branch:** feature/issue-19-api-guard
 
+## Phase 14: Issue 25 image parameter repair
+- [x] Created isolated worktree on `codex/fix-issue-25-image-params` from `origin/main`.
+- [x] Confirmed `xai_generate_image` always sent the unsupported `size` field and injected `n: 1` when omitted.
+- [x] Removed `size` from the tool schema, rejected legacy explicit `size` calls locally, and made `n` opt-in.
+- [x] Added regression coverage for default payload omission, explicit `n`, and no-request rejection of `size`.
+- [x] Addressed reviewer feedback by enforcing the documented integer range for `n` in the schema and direct execution path.
+- [x] Final verification passed: `npm test`, `npm run typecheck`, and `git diff --check`.
+
+**Current branch:** codex/fix-issue-25-image-params
+
 ## Phase 13: Issue 19 real-package verification and 1.2.4 release staging
 - [x] Staged docs for the `pi-xai-oauth` 1.2.4 update path covering published npm installs and local checkout reinstalls.
 - [x] Recorded that the issue 19 verification work now targets the real pi 0.79.x API guard instead of a mocked guard.
