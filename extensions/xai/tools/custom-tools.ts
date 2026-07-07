@@ -267,24 +267,39 @@ Be specific and cite examples where helpful.`;
         properties: {
           prompt: { type: "string", description: "Detailed description of the image to generate" },
           model: { type: "string", description: "Image model to use", default: DEFAULT_XAI_IMAGE_MODEL },
-          size: { type: "string", description: "Image size (e.g. 1024x1024, 1792x1024)", default: "1024x1024" },
-          n: { type: "number", description: "Number of images to generate (1-4)", default: 1 }
+          n: { type: "number", minimum: 1, maximum: 4, description: "Number of images to generate (1-4)" }
         },
         required: ["prompt"],
       },
       execute: async (_toolCallId: string, params: { prompt?: string; model?: string; size?: string; n?: number }, _signal: any, _onUpdate: any, ctx: any) => {
+        if (params?.size !== undefined) {
+          return xaiToolError("Error: The xAI image API does not support the 'size' parameter. Omit it from the request.", {
+            error: true,
+            prompt: params.prompt,
+          });
+        }
+        if (params?.n !== undefined && (!Number.isInteger(params.n) || params.n < 1 || params.n > 4)) {
+          return xaiToolError("Error: The 'n' parameter must be an integer from 1 to 4.", {
+            error: true,
+            prompt: params.prompt,
+          });
+        }
+
         const apiKey = await resolveXaiAuthToken(ctx);
         if (!apiKey) {
           return xaiToolError("Error: No xAI OAuth credentials found. Please run the OAuth login first.", { prompt: params?.prompt });
         }
+        const body: Record<string, any> = {
+          model: params.model || DEFAULT_XAI_IMAGE_MODEL,
+          prompt: params.prompt,
+        };
+        if (params.n !== undefined) {
+          body.n = params.n;
+        }
+
         let data: any;
         try {
-          data = await postXaiJson(apiKey, XAI_IMAGES_GENERATIONS_URL, {
-            model: params.model || DEFAULT_XAI_IMAGE_MODEL,
-            prompt: params.prompt,
-            n: params.n || 1,
-            size: params.size || "1024x1024"
-          }, _signal);
+          data = await postXaiJson(apiKey, XAI_IMAGES_GENERATIONS_URL, body, _signal);
         } catch (error) {
           const status = statusFromError(error);
           return xaiToolError(`xAI Image API Error${status ? ` ${status}` : ""}: ${messageFromError(error)}`, { error: true, status, prompt: params.prompt });
